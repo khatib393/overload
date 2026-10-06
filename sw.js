@@ -1,5 +1,5 @@
 // Overload Log offline worker: the app opens even with no signal in the gym.
-const CACHE = "overload-v1";
+const CACHE = "overload-v2";
 const CORE = ["./", "./index.html", "./manifest.webmanifest", "./icon-180.png", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {
