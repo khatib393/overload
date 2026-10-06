@@ -446,7 +446,6 @@ function draftFor(n){
   }
   return {w: w === "" ? "" : String(w), r: String(r)};
 }
-
 /* ---------- views ---------- */
 function viewBody(){
   var date = U.date, b = S.body[date] || {}, m = S.meals[date] || [];
@@ -914,4 +913,289 @@ function copyText(t){
 }
 function copyFlow(text, where){
   copyText(text).then(function(ok){
-    if (where === "log"){ S
+    if (where === "log"){ S.backupAt = todayStr(); save(); }
+    U.fallback = ok ? null : {where:where, text:text};
+    render();
+    if (ok) toast(where === "log" ? "Log copied. Paste it into your notes." : "Session copied");
+  });
+}
+
+/* ---------- actions ---------- */
+function addEx(raw, force){
+  var nm = cleanName(raw);
+  if (!nm){ toast("Type an exercise name first."); return; }
+  var n = canon(nm);
+  if (!n && !force){
+    var nr = near(nm);
+    if (nr){ U.pending = {typed:nm, near:nr}; render(); return; }
+  }
+  n = n || nm;
+  cfg(n);
+  if (S.plan[U.day].indexOf(n) < 0) S.plan[U.day].push(n);
+  U.pending = null; save(); render();
+  toast(n+" added to "+U.day);
+}
+function renameEx(oldN, newN){
+  var hit = canon(newN);
+  var dest = (hit && hit !== oldN) ? hit : newN;
+  if (dest === oldN) return oldN;
+  var L = S.log[oldN];
+  if (L){
+    if (!S.log[dest]) S.log[dest] = {};
+    Object.keys(L).forEach(function(d){ S.log[dest][d] = (S.log[dest][d] || []).concat(L[d]); });
+    delete S.log[oldN];
+  }
+  if (!S.ex[dest]) S.ex[dest] = S.ex[oldN] || Object.assign({}, S.defaults);
+  delete S.ex[oldN];
+  DAYS.forEach(function(d){
+    var seen = {};
+    S.plan[d] = S.plan[d].map(function(x){ return x === oldN ? dest : x; }).filter(function(x){ if (seen[x]) return false; seen[x]=1; return true; });
+  });
+  return dest;
+}
+function pushSets(n, sets){
+  if (!S.log[n]) S.log[n] = {};
+  if (!S.log[n][U.date]) S.log[n][U.date] = [];
+  sets.forEach(function(s){ S.log[n][U.date].push([r2(s[0]), s[1]]); });
+  delete U.drafts[n];
+  save();
+}
+
+function rollUpMeals(date){
+  var m = S.meals[date] || []; if (!m.length) return;
+  var k = m.reduce(function(a,x){ return a + (num(x.kcal) || 0); }, 0);
+  var p = m.reduce(function(a,x){ return a + (num(x.p) || 0); }, 0);
+  var r = bodyRow(date);
+  if (k > 0) r.kcal = Math.round(k);
+  if (p > 0) r.p = Math.round(p);
+}
+
+document.addEventListener("click", function(e){
+  var b = e.target.closest("[data-act]"); if (!b) return;
+  var act = b.getAttribute("data-act");
+  var cardEl = b.closest(".ex");
+  var n = cardEl ? cardEl.getAttribute("data-name") : null;
+  var d, c, base, w, r, sets;
+  switch (act){
+    case "tab":
+      U.view = b.getAttribute("data-view"); U.fallback = null; U.eraseArm = false; U.restoreMsg = "";
+      render(); try { window.scrollTo(0,0); } catch(_){} break;
+    case "day":
+      U.day = b.getAttribute("data-d"); U.drafts = {}; U.editing = null; U.pending = null; U.fallback = null; render(); break;
+    case "today":
+      U.date = todayStr(); U.autoDate = true; U.day = dayOf(U.date); U.drafts = {}; U.fallback = null; render(); break;
+    case "w-": case "w+":
+      d = Object.assign({}, draftFor(n)); c = cfg(n);
+      base = num(d.w); if (!isFinite(base)) base = 0;
+      d.w = String(Math.max(0, r2(base + (act === "w+" ? c.inc : -c.inc))));
+      U.drafts[n] = d; render(); break;
+    case "r-": case "r+":
+      d = Object.assign({}, draftFor(n));
+      base = parseInt(d.r, 10); if (!(base >= 0)) base = 0;
+      d.r = String(Math.max(1, base + (act === "r+" ? 1 : -1)));
+      U.drafts[n] = d; render(); break;
+    case "log":
+      d = draftFor(n); w = num(d.w); r = parseInt(d.r, 10);
+      if (!isFinite(w) || w < 0 || w > 1000){ toast("Enter a weight. Use 0 for bodyweight."); break; }
+      if (!(r >= 1 && r <= 100)){ toast("Enter how many reps you did."); break; }
+      pushSets(n, [[w, r]]);
+      render();
+      toast(n+", set "+S.log[n][U.date].length+": "+fset([r2(w), r], "×"));
+      break;
+    case "madd":
+      var lab = (document.getElementById("mlabel")||{}).value || "";
+      var mk = num((document.getElementById("mkcal")||{}).value);
+      var mp = num((document.getElementById("mp")||{}).value);
+      if (!S.meals[U.date]) S.meals[U.date] = [];
+      S.meals[U.date].push({ label: cleanName(lab), kcal: isFinite(mk) ? mk : null, p: isFinite(mp) ? mp : null, photo: U.pendingPix || null });
+      U.pendingPix = null;
+      rollUpMeals(U.date); save(); render(); break;
+    case "mdel":
+      var mi = parseInt(b.getAttribute("data-i"), 10);
+      var gone = (S.meals[U.date] || [])[mi];
+      if (gone && gone.photo) PIX.del(gone.photo).catch(function(){});
+      (S.meals[U.date] || []).splice(mi, 1);
+      rollUpMeals(U.date); save(); render(); break;
+    case "delset":
+      var arr = (S.log[n]||{})[U.date];
+      if (arr){
+        arr.splice(+b.getAttribute("data-k"), 1);
+        if (!arr.length) delete S.log[n][U.date];
+        if (!Object.keys(S.log[n]).length) delete S.log[n];
+      }
+      delete U.drafts[n]; save(); render(); toast("Set deleted"); break;
+    case "type":
+      U.typing[n] = !U.typing[n]; render();
+      if (U.typing[n]){
+        var inp = document.querySelector('.ex[data-name="'+cssEsc(n)+'"] [data-f="t"]');
+        if (inp) inp.focus();
+      }
+      break;
+    case "logtyped":
+      sets = parseSets(U.typed[n] || "");
+      if (!sets.length){ toast("Couldn't read that. Try 60x8, 60x8, 60x7"); break; }
+      pushSets(n, sets); U.typed[n] = ""; U.typing[n] = false; render();
+      toast(n+": "+sets.length+" set"+(sets.length>1?"s":"")+" added"); break;
+    case "edit":
+      U.editing = U.editing === n ? null : n; render(); break;
+    case "savecfg":
+      var q = function(f){ return cardEl.querySelector('[data-f="'+f+'"]').value; };
+      var lo = parseInt(q("lo"),10), hi = parseInt(q("hi"),10), inc = num(q("inc"));
+      if (!(lo >= 1 && hi >= lo && hi <= 100)){ toast("Rep range needs a low number and a high number at least as big."); break; }
+      if (!(inc > 0 && inc <= 50)){ toast("The increase has to be more than 0 kg."); break; }
+      c = cfg(n); c.lo = lo; c.hi = hi; c.inc = r2(inc);
+      var nn = cleanName(q("name")), fin = n;
+      if (nn && nn !== n) fin = renameEx(n, nn);
+      U.editing = null; delete U.drafts[n]; delete U.drafts[fin]; save(); render(); toast("Saved "+fin); break;
+    case "remove":
+      S.plan[U.day] = S.plan[U.day].filter(function(x){ return x !== n; });
+      U.editing = null; save(); render(); toast("Removed from "+U.day+". History kept."); break;
+    case "add":
+      addEx(document.getElementById("addname").value); break;
+    case "usenear":
+      if (U.pending) addEx(U.pending.near); break;
+    case "keepnew":
+      if (U.pending) addEx(U.pending.typed, true); break;
+    case "copysession":
+      copyFlow(sessionText(), "session"); break;
+    case "copylog":
+      copyFlow(exportLog(), "log"); break;
+    case "savefile":
+      if (!U.dl) break;
+      U.dl.save({filename:"workout-log-"+todayStr()+".txt", data:exportLog()}).then(function(){
+        S.backupAt = todayStr(); save(); render(); toast("Log saved as a file");
+      }, function(err){
+        var code = err && err.code;
+        if (code === "declined"){ toast("Not saved"); }
+        else if (code === "rate_limited"){ toast("A save is already open. Try again in a moment."); }
+        else { U.dl = null; render(); toast("Saving files isn't available here. Use Copy log."); }
+      });
+      break;
+    case "restore":
+      if (!U.restoreText.trim()){ toast("Paste a log first."); break; }
+      var res = importLog(U.restoreText);
+      if (!res.sess){ U.restoreMsg = "Nothing restored. Each exercise needs a name line, then lines like - 2026-10-06: 60x8, 60x8"; }
+      else { U.restoreMsg = "Restored "+res.ex+" exercise"+(res.ex>1?"s":"")+" and "+res.sess+" session"+(res.sess>1?"s":"")+"."; U.restoreText = ""; save(); }
+      U.drafts = {}; render(); break;
+    case "erase":
+      if (!U.eraseArm){
+        U.eraseArm = true; render();
+        setTimeout(function(){ if (U.eraseArm){ U.eraseArm = false; if (U.view === "setup") render(); } }, 4000);
+      } else {
+        S = blank(); save(); U.eraseArm = false; U.drafts = {}; U.typing = {}; U.typed = {}; render(); toast("All data erased");
+      }
+      break;
+    case "fillwu":
+      U.drafts[n] = {w: b.getAttribute("data-w"), r: b.getAttribute("data-r")}; render(); break;
+    case "hrange":
+      U.hist = +b.getAttribute("data-k"); render(); break;
+    case "histex":
+      U.histEx = b.getAttribute("data-name"); render(); try { window.scrollTo(0,0); } catch(_){} break;
+    case "histclose":
+      U.histEx = null; render(); break;
+    case "openday":
+      U.date = b.getAttribute("data-date"); U.autoDate = (U.date === todayStr()); U.day = b.getAttribute("data-d");
+      U.view = "today"; U.drafts = {}; U.editing = null; U.fallback = null; render(); try { window.scrollTo(0,0); } catch(_){} break;
+    case "gobackup":
+      U.view = "log"; render(); try { window.scrollTo(0,0); } catch(_){} break;
+  }
+});
+
+function cssEsc(s){ return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, "\\$&"); }
+
+document.addEventListener("input", function(e){
+  var t = e.target, f = t.getAttribute("data-f"), cardEl = t.closest(".ex");
+  if (cardEl && (f === "w" || f === "r")){
+    var n = cardEl.getAttribute("data-name");
+    var d = Object.assign({}, draftFor(n)); d[f] = t.value; U.drafts[n] = d;
+  } else if (cardEl && f === "t"){
+    U.typed[cardEl.getAttribute("data-name")] = t.value;
+  } else if (t.hasAttribute("data-sched")){
+    S.schedule[t.getAttribute("data-sched")] = t.value; save();
+  } else if (t.id === "restore"){
+    U.restoreText = t.value;
+  }
+});
+
+document.addEventListener("change", function(e){
+  var t = e.target;
+  var act = t.getAttribute("data-act");
+  
+  if (act === "bfield"){
+    var v = num(t.value);
+    bodyRow(U.date)[t.getAttribute("data-f")] = isFinite(v) ? v : null;
+    save(); render(); return;
+  }
+  if (act === "dfield"){
+    var dv = num(t.value);
+    if (isFinite(dv)) { S.diet[t.getAttribute("data-f")] = dv; save(); }
+    return;
+  }
+  if (act === "bdate"){ U.date = t.value; render(); return; }
+  if (act === "mphoto"){
+    var f = t.files && t.files[0]; if (!f) return;
+    shrink(f, 900, 0.7)
+      .then(function(blob){
+        var id = U.date + "-" + Date.now();
+        return PIX.put(id, blob).then(function(){ U.pendingPix = id; toast("Photo attached"); });
+      })
+      .catch(function(){ toast("Couldn't save that photo"); });
+    return;
+  }
+
+  if (t.id === "restorefile"){
+    var f2 = t.files && t.files[0]; if (!f2) return;
+    var rd = new FileReader();
+    rd.onload = function(){ U.restoreText = String(rd.result || ""); U.restoreMsg = "Loaded "+f2.name+". Tap Restore to add it."; render(); };
+    rd.onerror = function(){ U.restoreMsg = "Couldn't read that file. Open it, copy the text, and paste it above."; render(); };
+    rd.readAsText(f2);
+    return;
+  }
+  if (t.id === "date"){
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(t.value)) return;
+    U.date = t.value; U.autoDate = (t.value === todayStr()); U.day = dayOf(U.date);
+    U.drafts = {}; U.fallback = null; render();
+  } else if (t.hasAttribute("data-def")){
+    var k = t.getAttribute("data-def"), v = k === "inc" ? num(t.value) : parseInt(t.value, 10);
+    var nd = Object.assign({}, S.defaults); nd[k] = k === "inc" ? r2(v) : v;
+    if (nd.lo >= 1 && nd.hi >= nd.lo && nd.hi <= 100 && nd.inc > 0 && nd.inc <= 50){ S.defaults = nd; save(); toast("Saved"); }
+    else { toast("Check the numbers: low reps, high reps at least as big, increase above 0."); render(); }
+  }
+});
+
+document.addEventListener("keydown", function(e){
+  if (e.key !== "Enter") return;
+  var t = e.target;
+  if (t.id === "addname"){ e.preventDefault(); addEx(t.value); }
+  else if (t.getAttribute("data-f") === "t"){
+    e.preventDefault();
+    var btn = t.closest(".ex").querySelector('[data-act="logtyped"]'); if (btn) btn.click();
+  } else if (t.getAttribute("data-f") === "w" || t.getAttribute("data-f") === "r"){
+    e.preventDefault(); t.blur();
+  }
+});
+
+document.addEventListener("visibilitychange", function(){
+  if (document.visibilityState === "visible" && U.autoDate && U.date !== todayStr()){
+    U.date = todayStr(); U.day = dayOf(U.date); U.drafts = {}; render();
+  }
+});
+
+load();
+render();
+
+if (window.claude && typeof window.claude.use === "function"){
+  window.claude.use("downloads").then(function(dl){
+    U.dl = dl || null;
+    if (U.view === "log") render();
+  }, function(){});
+}
+})();
+</script>
+<script>
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); });
+}
+</script>
+</body>
+</html>
