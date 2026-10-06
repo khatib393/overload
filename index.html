@@ -155,6 +155,12 @@ section{margin-top:24px}
 .prog svg{display:block;width:100%;height:auto;margin:10px 0 4px}
 .prow{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--rule);font-size:15px;font-variant-numeric:tabular-nums}
 .prow span:last-child{text-align:right}
+
+.meal{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--rule)}
+.meal:last-child{border-bottom:none}
+.meal span{flex:1;word-break:break-word}
+.meal .mono{flex:none;font-family:var(--cond);color:var(--muted)}
+
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:10;display:flex;padding-bottom:env(safe-area-inset-bottom,0px);background:var(--surface);border-top:1px solid var(--rule)}
 nav.tabs button{flex:1;height:58px;border:0;background:none;color:var(--muted);font:600 18px var(--cond)}
 nav.tabs button[aria-current="page"]{color:var(--ink);box-shadow:inset 0 3px 0 var(--plate)}
@@ -170,6 +176,7 @@ nav.tabs button[aria-current="page"]{color:var(--ink);box-shadow:inset 0 3px 0 v
 <nav class="tabs" aria-label="Sections">
   <button data-act="tab" data-view="today">Today</button>
   <button data-act="tab" data-view="history">History</button>
+  <button data-act="tab" data-view="body">Body</button>
   <button data-act="tab" data-view="log">Log</button>
   <button data-act="tab" data-view="setup">Setup</button>
 </nav>
@@ -187,6 +194,9 @@ function blank(){
     plan: {Mon:[],Tue:[],Wed:[],Thu:[],Fri:[],Sat:[],Sun:[]},
     ex: {},
     log: {},
+    body: {},
+    meals: {},
+    diet: {kcal:2400, p:190, f:75},
     defaults: {lo:8, hi:12, inc:2.5},
     backupAt: null
   };
@@ -206,6 +216,8 @@ function load(){
       S.schedule = Object.assign(blank().schedule, d.schedule || {});
       S.defaults = Object.assign(blank().defaults, d.defaults || {});
       S.ex = d.ex || {}; S.log = d.log || {};
+      S.body = d.body || {}; S.meals = d.meals || {};
+      S.diet = Object.assign(blank().diet, d.diet || {});
     } catch(e){
       try { localStorage.setItem(KEY + ":unreadable-" + Date.now(), raw); } catch(_){}
     }
@@ -215,6 +227,92 @@ function load(){
 }
 function save(){
   try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){ storageOK = false; }
+}
+
+/* ---------- photos: separate store so a big image can never break the log ---------- */
+var PIX = (function(){
+  var DB = "overload-photos", STORE = "photos", dbp = null;
+  function open(){
+    if (dbp) return dbp;
+    dbp = new Promise(function(res, rej){
+      var rq = indexedDB.open(DB, 1);
+      rq.onupgradeneeded = function(){ rq.result.createObjectStore(STORE); };
+      rq.onsuccess = function(){ res(rq.result); };
+      rq.onerror = function(){ rej(rq.error); };
+    });
+    return dbp;
+  }
+  function store(mode){
+    return open().then(function(db){ return db.transaction(STORE, mode).objectStore(STORE); });
+  }
+  function wrap(req){
+    return new Promise(function(res, rej){
+      req.onsuccess = function(){ res(req.result); };
+      req.onerror = function(){ rej(req.error); };
+    });
+  }
+  return {
+    put: function(id, blob){ return store("readwrite").then(function(st){ return wrap(st.put(blob, id)); }); },
+    get: function(id){ return store("readonly").then(function(st){ return wrap(st.get(id)); }); },
+    del: function(id){ return store("readwrite").then(function(st){ return wrap(st.delete(id)); }); }
+  };
+})();
+
+// Phone photos are 3-5 MB. Resize to 900px and re-encode — lands around 80-120 kB.
+function shrink(file, maxPx, quality){
+  return new Promise(function(res, rej){
+    var img = new Image(), url = URL.createObjectURL(file);
+    img.onload = function(){
+      var sc = Math.min(1, maxPx / Math.max(img.width, img.height));
+      var cv = document.createElement("canvas");
+      cv.width = Math.round(img.width * sc);
+      cv.height = Math.round(img.height * sc);
+      cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      cv.toBlob(function(b){ b ? res(b) : rej(new Error("encode failed")); }, "image/jpeg", quality);
+    };
+    img.onerror = function(){ URL.revokeObjectURL(url); rej(new Error("decode failed")); };
+    img.src = url;
+  });
+}
+
+/* ---------- body ---------- */
+function bodyRow(date){ if (!S.body[date]) S.body[date] = {}; return S.body[date]; }
+function bodyDates(){ return Object.keys(S.body).sort(); }
+function mean(a){ return a.length ? a.reduce(function(x,y){ return x+y; }, 0) / a.length : null; }
+
+function weightSeries(){
+  return bodyDates()
+    .filter(function(d){ return num(S.body[d].w) > 0; })
+    .map(function(d){ return {d:d, w:num(S.body[d].w)}; });
+}
+
+// 7-day rolling average ending n entries from the latest
+function rollAvg(backBy){
+  var ws = weightSeries();
+  var end = ws.length - 1 - (backBy || 0);
+  if (end < 0) return null;
+  return mean(ws.slice(Math.max(0, end - 6), end + 1).map(function(x){ return x.w; }));
+}
+
+function avgOf(field, days){
+  var ds = bodyDates().filter(function(d){ return num(S.body[d][field]) > 0; });
+  if (days) ds = ds.slice(-days);
+  return ds.length ? mean(ds.map(function(d){ return num(S.body[d][field]); })) : null;
+}
+
+// Real maintenance from your own trend: intake adjusted by the weight change.
+function tdee(){
+  var ws = weightSeries();
+  var ks = bodyDates().filter(function(d){ return num(S.body[d].kcal) > 0; });
+  if (ws.length < 10 || ks.length < 10) return null;
+  var span = Math.round((parseDate(ws[ws.length-1].d) - parseDate(ws[0].d)) / 86400000);
+  if (span < 9) return null;
+  var k = Math.min(5, ws.length);
+  var first = mean(ws.slice(0, k).map(function(x){ return x.w; }));
+  var last  = mean(ws.slice(-k).map(function(x){ return x.w; }));
+  var avgK  = mean(ks.map(function(d){ return num(S.body[d].kcal); }));
+  return { value: Math.round(avgK - ((last - first) * 7700) / span), span: span, n: ws.length };
 }
 
 /* ---------- helpers ---------- */
@@ -290,9 +388,7 @@ function parseSets(str){
   return out.filter(function(x){ return isFinite(x[0]) && x[0] >= 0 && x[0] <= 1000 && x[1] >= 1 && x[1] <= 100; });
 }
 
-/* ---------- progression ----------
-   Lighter sets BEFORE the first heaviest set = warm-ups / ramp sets: ignored.
-   Lighter sets AFTER it = drop sets: they block an increase. */
+/* ---------- progression ---------- */
 function parts(sets){
   if (!sets || !sets.length) return {wu:[], work:[], top:0, drops:false};
   var top = Math.max.apply(null, sets.map(function(s){ return s[0]; }));
@@ -333,7 +429,7 @@ function warmups(w){
 }
 
 /* ---------- UI state ---------- */
-var U = {view:"today", date:todayStr(), autoDate:true, day:null, drafts:{}, typing:{}, typed:{}, editing:null, pending:null, fallback:null, restoreText:"", restoreMsg:"", eraseArm:false, dl:null, hist:30, histEx:null};
+var U = {view:"today", date:todayStr(), autoDate:true, day:null, drafts:{}, typing:{}, typed:{}, editing:null, pending:null, fallback:null, restoreText:"", restoreMsg:"", eraseArm:false, dl:null, hist:30, histEx:null, pendingPix:null};
 U.day = dayOf(U.date);
 
 function draftFor(n){
@@ -352,6 +448,76 @@ function draftFor(n){
 }
 
 /* ---------- views ---------- */
+function viewBody(){
+  var date = U.date, b = S.body[date] || {}, m = S.meals[date] || [];
+  var cur = rollAvg(0), prev = rollAvg(7);
+  var delta = (cur != null && prev != null) ? cur - prev : null;
+  var t = tdee();
+  var kcalToday = m.reduce(function(a,x){ return a + (num(x.kcal) || 0); }, 0);
+  var pToday    = m.reduce(function(a,x){ return a + (num(x.p) || 0); }, 0);
+
+  var h = '<header class="dayhead"><h1>Body</h1><div class="dateline">'
+        + '<input type="date" id="bdate" data-act="bdate" value="'+date+'" max="'+todayStr()+'"></div></header>';
+
+  h += '<div class="ex"><div class="row">'
+     + '<label>Fasted weight<input class="field" inputmode="decimal" data-act="bfield" data-f="w" value="'+(b.w != null ? b.w : "")+'" placeholder="kg"></label>'
+     + '<label>Calories<input class="field" inputmode="numeric" data-act="bfield" data-f="kcal" value="'+(b.kcal != null ? b.kcal : "")+'" placeholder="kcal"></label>'
+     + '<label>Protein<input class="field" inputmode="numeric" data-act="bfield" data-f="p" value="'+(b.p != null ? b.p : "")+'" placeholder="g"></label>'
+     + '</div>'
+     + '<p class="note">Weight: morning, after the toilet, before food. Same conditions every day or the trend is noise.</p></div>';
+
+  // headline
+  h += '<div class="ex"><h2>'+(cur != null ? r2(cur) + " kg" : "—")+'</h2>'
+     + '<p class="note">7-day average'
+     + (delta != null ? ' · <strong>'+(delta > 0 ? "+" : "")+r2(delta)+'</strong> vs previous week' : '')
+     + '</p>'
+     + '<p class="note">Avg intake '+(avgOf("kcal",14) != null ? Math.round(avgOf("kcal",14)) : "—")+' kcal · '
+     + (avgOf("p",14) != null ? Math.round(avgOf("p",14)) : "—")+'g protein · '+bodyDates().length+' days logged</p></div>';
+
+  // measured maintenance
+  h += '<div class="ex"><h2>'+(t ? t.value + " kcal" : "—")+'</h2>'
+     + '<p class="note">'+(t
+        ? 'Measured maintenance, from '+t.span+' days of your own weight and intake. Eat ~500 under it for 0.5 kg a week.'
+        : 'Needs ~10 days with both weight and calories. '
+          + Math.min(weightSeries().length, bodyDates().filter(function(d){ return num(S.body[d].kcal) > 0; }).length)
+          + ' so far.')+'</p></div>';
+
+  // targets
+  h += '<div class="ex"><h3>Targets</h3><div class="row">'
+     + '<label>kcal<input class="field num" inputmode="numeric" data-act="dfield" data-f="kcal" value="'+S.diet.kcal+'"></label>'
+     + '<label>protein<input class="field num" inputmode="numeric" data-act="dfield" data-f="p" value="'+S.diet.p+'"></label>'
+     + '<label>fat<input class="field num" inputmode="numeric" data-act="dfield" data-f="f" value="'+S.diet.f+'"></label>'
+     + '</div></div>';
+
+  // meals
+  h += '<div class="ex"><h3>Meals · '+Math.round(kcalToday)+' kcal, '+Math.round(pToday)+'g P</h3>';
+  h += m.map(function(x, i){
+    return '<div class="meal" data-i="'+i+'">'
+      + (x.photo ? '<img data-pix="'+esc(x.photo)+'" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:4px">' : '')
+      + '<span>'+esc(x.label || "Meal")+'</span>'
+      + '<span class="mono">'+(x.kcal || "—")+' kcal · '+(x.p || "—")+'g</span>'
+      + '<button class="link" data-act="mdel" data-i="'+i+'">remove</button></div>';
+  }).join("");
+  h += '<div class="row">'
+     + '<input class="field" id="mlabel" placeholder="what it was">'
+     + '<input class="field num" id="mkcal" inputmode="numeric" placeholder="kcal">'
+     + '<input class="field num" id="mp" inputmode="numeric" placeholder="protein g">'
+     + '</div>'
+     + '<label class="btn filebtn" style="margin-top:10px">Add photo<input type="file" accept="image/*" capture="environment" data-act="mphoto" hidden></label>'
+     + '<button class="btn primary" data-act="madd" style="margin-top:10px">Add meal</button></div>';
+
+  return h;
+}
+
+function paintPix(){
+  document.querySelectorAll("img[data-pix]").forEach(function(el){
+    var id = el.getAttribute("data-pix");
+    PIX.get(id).then(function(blob){
+      if (blob) el.src = URL.createObjectURL(blob);
+    }).catch(function(){});
+  });
+}
+
 function banner(){
   if (!storageOK) return '<p class="banner warn">This browser isn\'t saving your data. Copy your log from the Log tab before you close this page.</p>';
   if (!hasData()) return "";
@@ -513,6 +679,25 @@ function exportLog(){
       return "- "+d+": "+L[d].map(function(s){ return fset(s,"x"); }).join(", ");
     })).join("\n"));
   });
+
+  var bd = bodyDates().slice(-14);
+  if (bd.length){
+    var t2 = tdee(), cur2 = rollAvg(0), prev2 = rollAvg(7);
+    out.push(["BODY (last 14 days)"].concat(bd.map(function(d){
+      var r = S.body[d];
+      return "- " + d + ": " + (r.w != null ? r.w + "kg" : "—") + ", "
+           + (r.kcal != null ? r.kcal + " kcal" : "—") + ", "
+           + (r.p != null ? r.p + "g P" : "—");
+    })).join("\n"));
+    var sum = ["7-day weight avg: " + (cur2 != null ? r2(cur2) : "—")];
+    if (cur2 != null && prev2 != null) sum.push("vs prev week: " + (cur2 - prev2 > 0 ? "+" : "") + r2(cur2 - prev2));
+    sum.push("Avg intake: " + (avgOf("kcal",14) != null ? Math.round(avgOf("kcal",14)) : "—")
+           + " kcal, " + (avgOf("p",14) != null ? Math.round(avgOf("p",14)) : "—") + "g protein");
+    sum.push("Target: " + S.diet.kcal + " kcal, " + S.diet.p + "g protein, " + S.diet.f + "g fat");
+    if (t2) sum.push("Measured maintenance: ~" + t2.value + " kcal over " + t2.span + " days");
+    out.push(sum.join("\n"));
+  }
+
   return out.join("\n\n");
 }
 
@@ -690,9 +875,10 @@ function viewSetup(){
 
 function render(){
   var app = document.getElementById("app");
-  app.innerHTML = U.view === "today" ? viewToday() : U.view === "history" ? viewHistory() : U.view === "log" ? viewLog() : viewSetup();
+  app.innerHTML = U.view === "today" ? viewToday() : U.view === "history" ? viewHistory() : U.view === "log" ? viewLog() : U.view === "body" ? viewBody() : viewSetup();
   var tabs = document.querySelectorAll("nav.tabs button");
   for (var i=0;i<tabs.length;i++) tabs[i].setAttribute("aria-current", tabs[i].getAttribute("data-view") === U.view ? "page" : "false");
+  if (U.view === "body") paintPix();
 }
 
 var tt;
@@ -728,242 +914,4 @@ function copyText(t){
 }
 function copyFlow(text, where){
   copyText(text).then(function(ok){
-    if (where === "log"){ S.backupAt = todayStr(); save(); }
-    U.fallback = ok ? null : {where:where, text:text};
-    render();
-    if (ok) toast(where === "log" ? "Log copied. Paste it into your notes." : "Session copied");
-  });
-}
-
-/* ---------- actions ---------- */
-function addEx(raw, force){
-  var nm = cleanName(raw);
-  if (!nm){ toast("Type an exercise name first."); return; }
-  var n = canon(nm);
-  if (!n && !force){
-    var nr = near(nm);
-    if (nr){ U.pending = {typed:nm, near:nr}; render(); return; }
-  }
-  n = n || nm;
-  cfg(n);
-  if (S.plan[U.day].indexOf(n) < 0) S.plan[U.day].push(n);
-  U.pending = null; save(); render();
-  toast(n+" added to "+U.day);
-}
-function renameEx(oldN, newN){
-  var hit = canon(newN);
-  var dest = (hit && hit !== oldN) ? hit : newN;
-  if (dest === oldN) return oldN;
-  var L = S.log[oldN];
-  if (L){
-    if (!S.log[dest]) S.log[dest] = {};
-    Object.keys(L).forEach(function(d){ S.log[dest][d] = (S.log[dest][d] || []).concat(L[d]); });
-    delete S.log[oldN];
-  }
-  if (!S.ex[dest]) S.ex[dest] = S.ex[oldN] || Object.assign({}, S.defaults);
-  delete S.ex[oldN];
-  DAYS.forEach(function(d){
-    var seen = {};
-    S.plan[d] = S.plan[d].map(function(x){ return x === oldN ? dest : x; }).filter(function(x){ if (seen[x]) return false; seen[x]=1; return true; });
-  });
-  return dest;
-}
-function pushSets(n, sets){
-  if (!S.log[n]) S.log[n] = {};
-  if (!S.log[n][U.date]) S.log[n][U.date] = [];
-  sets.forEach(function(s){ S.log[n][U.date].push([r2(s[0]), s[1]]); });
-  delete U.drafts[n];
-  save();
-}
-
-document.addEventListener("click", function(e){
-  var b = e.target.closest("[data-act]"); if (!b) return;
-  var act = b.getAttribute("data-act");
-  var cardEl = b.closest(".ex");
-  var n = cardEl ? cardEl.getAttribute("data-name") : null;
-  var d, c, base, w, r, sets;
-  switch (act){
-    case "tab":
-      U.view = b.getAttribute("data-view"); U.fallback = null; U.eraseArm = false; U.restoreMsg = "";
-      render(); try { window.scrollTo(0,0); } catch(_){} break;
-    case "day":
-      U.day = b.getAttribute("data-d"); U.drafts = {}; U.editing = null; U.pending = null; U.fallback = null; render(); break;
-    case "today":
-      U.date = todayStr(); U.autoDate = true; U.day = dayOf(U.date); U.drafts = {}; U.fallback = null; render(); break;
-    case "w-": case "w+":
-      d = Object.assign({}, draftFor(n)); c = cfg(n);
-      base = num(d.w); if (!isFinite(base)) base = 0;
-      d.w = String(Math.max(0, r2(base + (act === "w+" ? c.inc : -c.inc))));
-      U.drafts[n] = d; render(); break;
-    case "r-": case "r+":
-      d = Object.assign({}, draftFor(n));
-      base = parseInt(d.r, 10); if (!(base >= 0)) base = 0;
-      d.r = String(Math.max(1, base + (act === "r+" ? 1 : -1)));
-      U.drafts[n] = d; render(); break;
-    case "log":
-      d = draftFor(n); w = num(d.w); r = parseInt(d.r, 10);
-      if (!isFinite(w) || w < 0 || w > 1000){ toast("Enter a weight. Use 0 for bodyweight."); break; }
-      if (!(r >= 1 && r <= 100)){ toast("Enter how many reps you did."); break; }
-      pushSets(n, [[w, r]]);
-      render();
-      toast(n+", set "+S.log[n][U.date].length+": "+fset([r2(w), r], "×"));
-      break;
-    case "delset":
-      var arr = (S.log[n]||{})[U.date];
-      if (arr){
-        arr.splice(+b.getAttribute("data-k"), 1);
-        if (!arr.length) delete S.log[n][U.date];
-        if (!Object.keys(S.log[n]).length) delete S.log[n];
-      }
-      delete U.drafts[n]; save(); render(); toast("Set deleted"); break;
-    case "type":
-      U.typing[n] = !U.typing[n]; render();
-      if (U.typing[n]){
-        var inp = document.querySelector('.ex[data-name="'+cssEsc(n)+'"] [data-f="t"]');
-        if (inp) inp.focus();
-      }
-      break;
-    case "logtyped":
-      sets = parseSets(U.typed[n] || "");
-      if (!sets.length){ toast("Couldn't read that. Try 60x8, 60x8, 60x7"); break; }
-      pushSets(n, sets); U.typed[n] = ""; U.typing[n] = false; render();
-      toast(n+": "+sets.length+" set"+(sets.length>1?"s":"")+" added"); break;
-    case "edit":
-      U.editing = U.editing === n ? null : n; render(); break;
-    case "savecfg":
-      var q = function(f){ return cardEl.querySelector('[data-f="'+f+'"]').value; };
-      var lo = parseInt(q("lo"),10), hi = parseInt(q("hi"),10), inc = num(q("inc"));
-      if (!(lo >= 1 && hi >= lo && hi <= 100)){ toast("Rep range needs a low number and a high number at least as big."); break; }
-      if (!(inc > 0 && inc <= 50)){ toast("The increase has to be more than 0 kg."); break; }
-      c = cfg(n); c.lo = lo; c.hi = hi; c.inc = r2(inc);
-      var nn = cleanName(q("name")), fin = n;
-      if (nn && nn !== n) fin = renameEx(n, nn);
-      U.editing = null; delete U.drafts[n]; delete U.drafts[fin]; save(); render(); toast("Saved "+fin); break;
-    case "remove":
-      S.plan[U.day] = S.plan[U.day].filter(function(x){ return x !== n; });
-      U.editing = null; save(); render(); toast("Removed from "+U.day+". History kept."); break;
-    case "add":
-      addEx(document.getElementById("addname").value); break;
-    case "usenear":
-      if (U.pending) addEx(U.pending.near); break;
-    case "keepnew":
-      if (U.pending) addEx(U.pending.typed, true); break;
-    case "copysession":
-      copyFlow(sessionText(), "session"); break;
-    case "copylog":
-      copyFlow(exportLog(), "log"); break;
-    case "savefile":
-      if (!U.dl) break;
-      U.dl.save({filename:"workout-log-"+todayStr()+".txt", data:exportLog()}).then(function(){
-        S.backupAt = todayStr(); save(); render(); toast("Log saved as a file");
-      }, function(err){
-        var code = err && err.code;
-        if (code === "declined"){ toast("Not saved"); }
-        else if (code === "rate_limited"){ toast("A save is already open. Try again in a moment."); }
-        else { U.dl = null; render(); toast("Saving files isn't available here. Use Copy log."); }
-      });
-      break;
-    case "restore":
-      if (!U.restoreText.trim()){ toast("Paste a log first."); break; }
-      var res = importLog(U.restoreText);
-      if (!res.sess){ U.restoreMsg = "Nothing restored. Each exercise needs a name line, then lines like - 2026-10-06: 60x8, 60x8"; }
-      else { U.restoreMsg = "Restored "+res.ex+" exercise"+(res.ex>1?"s":"")+" and "+res.sess+" session"+(res.sess>1?"s":"")+"."; U.restoreText = ""; save(); }
-      U.drafts = {}; render(); break;
-    case "erase":
-      if (!U.eraseArm){
-        U.eraseArm = true; render();
-        setTimeout(function(){ if (U.eraseArm){ U.eraseArm = false; if (U.view === "setup") render(); } }, 4000);
-      } else {
-        S = blank(); save(); U.eraseArm = false; U.drafts = {}; U.typing = {}; U.typed = {}; render(); toast("All data erased");
-      }
-      break;
-    case "fillwu":
-      U.drafts[n] = {w: b.getAttribute("data-w"), r: b.getAttribute("data-r")}; render(); break;
-    case "hrange":
-      U.hist = +b.getAttribute("data-k"); render(); break;
-    case "histex":
-      U.histEx = b.getAttribute("data-name"); render(); try { window.scrollTo(0,0); } catch(_){} break;
-    case "histclose":
-      U.histEx = null; render(); break;
-    case "openday":
-      U.date = b.getAttribute("data-date"); U.autoDate = (U.date === todayStr()); U.day = b.getAttribute("data-d");
-      U.view = "today"; U.drafts = {}; U.editing = null; U.fallback = null; render(); try { window.scrollTo(0,0); } catch(_){} break;
-    case "gobackup":
-      U.view = "log"; render(); try { window.scrollTo(0,0); } catch(_){} break;
-  }
-});
-
-function cssEsc(s){ return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, "\\$&"); }
-
-document.addEventListener("input", function(e){
-  var t = e.target, f = t.getAttribute("data-f"), cardEl = t.closest(".ex");
-  if (cardEl && (f === "w" || f === "r")){
-    var n = cardEl.getAttribute("data-name");
-    var d = Object.assign({}, draftFor(n)); d[f] = t.value; U.drafts[n] = d;
-  } else if (cardEl && f === "t"){
-    U.typed[cardEl.getAttribute("data-name")] = t.value;
-  } else if (t.hasAttribute("data-sched")){
-    S.schedule[t.getAttribute("data-sched")] = t.value; save();
-  } else if (t.id === "restore"){
-    U.restoreText = t.value;
-  }
-});
-
-document.addEventListener("change", function(e){
-  var t = e.target;
-  if (t.id === "restorefile"){
-    var f = t.files && t.files[0]; if (!f) return;
-    var rd = new FileReader();
-    rd.onload = function(){ U.restoreText = String(rd.result || ""); U.restoreMsg = "Loaded "+f.name+". Tap Restore to add it."; render(); };
-    rd.onerror = function(){ U.restoreMsg = "Couldn't read that file. Open it, copy the text, and paste it above."; render(); };
-    rd.readAsText(f);
-    return;
-  }
-  if (t.id === "date"){
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(t.value)) return;
-    U.date = t.value; U.autoDate = (t.value === todayStr()); U.day = dayOf(U.date);
-    U.drafts = {}; U.fallback = null; render();
-  } else if (t.hasAttribute("data-def")){
-    var k = t.getAttribute("data-def"), v = k === "inc" ? num(t.value) : parseInt(t.value, 10);
-    var nd = Object.assign({}, S.defaults); nd[k] = k === "inc" ? r2(v) : v;
-    if (nd.lo >= 1 && nd.hi >= nd.lo && nd.hi <= 100 && nd.inc > 0 && nd.inc <= 50){ S.defaults = nd; save(); toast("Saved"); }
-    else { toast("Check the numbers: low reps, high reps at least as big, increase above 0."); render(); }
-  }
-});
-
-document.addEventListener("keydown", function(e){
-  if (e.key !== "Enter") return;
-  var t = e.target;
-  if (t.id === "addname"){ e.preventDefault(); addEx(t.value); }
-  else if (t.getAttribute("data-f") === "t"){
-    e.preventDefault();
-    var btn = t.closest(".ex").querySelector('[data-act="logtyped"]'); if (btn) btn.click();
-  } else if (t.getAttribute("data-f") === "w" || t.getAttribute("data-f") === "r"){
-    e.preventDefault(); t.blur();
-  }
-});
-
-document.addEventListener("visibilitychange", function(){
-  if (document.visibilityState === "visible" && U.autoDate && U.date !== todayStr()){
-    U.date = todayStr(); U.day = dayOf(U.date); U.drafts = {}; render();
-  }
-});
-
-load();
-render();
-
-if (window.claude && typeof window.claude.use === "function"){
-  window.claude.use("downloads").then(function(dl){
-    U.dl = dl || null;
-    if (U.view === "log") render();
-  }, function(){});
-}
-})();
-</script>
-<script>
-if ("serviceWorker" in navigator && location.protocol === "https:") {
-  window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); });
-}
-</script>
-</body>
-</html>
+    if (where === "log"){ S
