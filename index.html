@@ -224,6 +224,16 @@ section{margin-top:26px}
 .fill.hit{background:var(--green)}
 .fill.over{background:var(--red)}
 
+/* your plan */
+.ptarget{display:flex;flex-wrap:wrap;gap:2px 16px;margin-top:8px;font-size:14px;color:var(--label2)}
+.ptarget b{margin-right:4px;font:700 22px var(--round);color:var(--label);font-variant-numeric:tabular-nums}
+.srow{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 10px;padding:10px 0;border-top:.5px solid var(--sep)}
+.ptarget + .srow{margin-top:8px}
+.srow .sn{font-weight:600;font-size:16px}
+.srow .sd{grid-column:1/-1;font-size:13px;line-height:1.35;color:var(--label2)}
+.srow .sk{display:flex;align-items:center;gap:10px;font:500 14px var(--round);color:var(--label2);white-space:nowrap}
+.btn.mini{height:32px;padding:0 14px;font-size:15px}
+
 /* floating glass tab bar */
 nav.tabs{position:fixed;left:12px;right:12px;bottom:calc(8px + env(safe-area-inset-bottom,0px));z-index:10;display:flex;max-width:536px;margin:0 auto;padding:5px;border-radius:30px}
 nav.tabs button{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;height:54px;border:0;border-radius:24px;background:none;color:var(--label);font:600 10.5px var(--body)}
@@ -261,7 +271,8 @@ function blank(){
     log: {},
     body: {},
     food: {},
-    diet: {kcal:2400, p:190},
+    diet: {kcal:2400, p:190, c:0, f:0},
+    staples: [],
     defaults: {lo:8, hi:12, inc:2.5},
     backupAt: null
   };
@@ -283,6 +294,7 @@ function load(){
       S.ex = d.ex || {}; S.log = d.log || {};
       S.body = d.body || {}; S.food = d.food || {};
       S.diet = Object.assign(blank().diet, d.diet || {});
+      S.staples = d.staples || [];
       migrateBody(d);
     } catch(e){
       try { localStorage.setItem(KEY + ":unreadable-" + Date.now(), raw); } catch(_){}
@@ -610,6 +622,11 @@ function exportLog(){
       return "- "+d+": "+L[d].map(function(s){ return fset(s,"x"); }).join(", ");
     })).join("\n"));
   });
+  if (S.staples.length){
+    out.push(["PLAN", planTarget()].concat(S.staples.map(function(x){
+      return "* "+[x.n, x.k != null ? x.k+" kcal" : "", x.p != null ? x.p+" g" : "", x.d || ""].join(" | ");
+    })).join("\n"));
+  }
   var bd = {};
   Object.keys(S.body).forEach(function(d){ if (bw(d)) bd[d] = 1; });
   Object.keys(S.food).forEach(function(d){ if (food(d).length) bd[d] = 1; });
@@ -642,6 +659,20 @@ function importBodyLine(d, rest){
   return got;
 }
 
+function planTarget(){
+  var T = S.diet;
+  return "Target: "+T.kcal+" kcal, "+T.p+" g protein"+(T.c ? ", "+T.c+" g carbs" : "")+(T.f ? ", "+T.f+" g fat" : "");
+}
+function parseStaple(line){
+  var f = line.replace(/^\*\s*/, "").split("|").map(function(x){ return x.trim(); });
+  var it = {n:cleanName(f[0] || ""), k:null, p:null, d:""}, rest = [];
+  f.slice(1).forEach(function(x){
+    var km = x.match(/^(\d+)\s*kcal$/i), pm = x.match(/^(\d+)\s*g$/i);
+    if (km && it.k == null) it.k = +km[1]; else if (pm && it.p == null) it.p = +pm[1]; else if (x) rest.push(x);
+  });
+  it.d = rest.join(" | ");
+  return it;
+}
 function parseFoodItem(line){
   var f = line.replace(/^\*\s*/, "").split("|").map(function(x){ return x.trim(); });
   if (f.length < 2) return {n:cleanName(f[0] || ""), k:null, p:null, t:""};
@@ -654,11 +685,25 @@ function parseFoodItem(line){
 }
 
 function importLog(text){
-  var pend = null, cur = null, exSeen = {}, sess = 0, days = {}, mode = "ex", bodySeen = {}, bodyDate = null, itemsFor = {};
+  var pend = null, cur = null, exSeen = {}, sess = 0, days = {}, mode = "ex", bodySeen = {}, bodyDate = null, itemsFor = {}, planGot = false, stapleReset = false;
   String(text).split(/\r?\n/).forEach(function(raw){
     var line = raw.trim(); if (!line) return;
     if (line.charAt(0) === ">") return;
     if (/^body\b/i.test(line)){ mode = "body"; pend = null; cur = null; return; }
+    if (/^plan\b/i.test(line)){ mode = "plan"; pend = null; cur = null; return; }
+    if (mode === "plan"){
+      if (/^target\s*:/i.test(line)){
+        var tk = line.match(/(\d+)\s*kcal/i), tp = line.match(/(\d+)\s*g\s*protein/i), tc = line.match(/(\d+)\s*g\s*carbs?/i), tf = line.match(/(\d+)\s*g\s*fat/i);
+        if (tk) S.diet.kcal = +tk[1]; if (tp) S.diet.p = +tp[1]; S.diet.c = tc ? +tc[1] : 0; S.diet.f = tf ? +tf[1] : 0;
+        planGot = true; return;
+      }
+      if (/^\*\s/.test(line)){
+        var st = parseStaple(line);
+        if (st.n){ if (!stapleReset){ S.staples = []; stapleReset = true; } S.staples.push(st); planGot = true; }
+        return;
+      }
+      mode = "ex";
+    }
     var m = line.match(/^[-•*–]\s*(\d{4}-\d{2}-\d{2})\s*:?\s*(.*)$/);
     if (mode === "body"){
       if (m){ bodyDate = m[1]; if (importBodyLine(m[1], m[2])) bodySeen[m[1]] = 1; return; }
@@ -706,7 +751,7 @@ function importLog(text){
       if (gap <= 14 && S.plan[day].indexOf(n) < 0) S.plan[day].push(n);
     });
   });
-  return {ex:Object.keys(exSeen).length, sess:sess, body:Object.keys(bodySeen).length};
+  return {ex:Object.keys(exSeen).length, sess:sess, body:Object.keys(bodySeen).length, plan:planGot};
 }
 
 function allSessions(){
@@ -1004,6 +1049,20 @@ function viewBody(){
   }
   h += '</section>';
 
+  /* plan */
+  if (S.staples.length){
+    h += '<div class="prog"><div class="hhead"><h2>Your plan</h2></div>'
+       + '<p class="ptarget"><span><b>'+fvol(T.kcal)+'</b>kcal</span><span><b>'+T.p+'</b>g protein</span>'
+       + (T.c ? '<span><b>'+T.c+'</b>g carbs</span>' : '')+(T.f ? '<span><b>'+T.f+'</b>g fat</span>' : '')+'</p>'
+       + S.staples.map(function(x, i){
+           return '<div class="srow"><span class="sn">'+esc(x.n)+'</span>'
+                + '<span class="sk">'+(x.k != null ? fvol(x.k)+' kcal'+(x.p != null ? ', '+x.p+' g' : '') : 'estimate later')
+                + '<button class="btn primary mini" data-act="staple" data-k="'+i+'" aria-label="Add '+esc(x.n)+' to '+(d === todayStr() ? "today" : nice(d))+'">Add</button></span>'
+                + (x.d ? '<span class="sd">'+esc(x.d)+'</span>' : '')+'</div>';
+         }).join("")
+       + '<p class="note">To change the plan, paste an updated PLAN block in Log, then tap Restore.</p></div>';
+  }
+
   /* trend */
   var ws = Object.keys(S.body).filter(bw).sort().slice(-30), wk = weekFood(d), mt = maintenance(d);
   if (ws.length || wk.n){
@@ -1044,7 +1103,11 @@ function weekData(end){
 function weekText(end, onPhoto){
   var days = span(end, 7, 0), T = S.diet, cw = weekAvg(end, 0), ow = weekAvg(end, 7), mt = maintenance(end);
   var L = ["Weekly review, "+nice(days[0])+" to "+nice(end)+" "+end.slice(0,4),
-           "Targets: "+T.kcal+" kcal and "+T.p+" g protein a day."];
+           "Targets per day: "+T.kcal+" kcal, "+T.p+" g protein"+(T.c ? ", "+T.c+" g carbs" : "")+(T.f ? ", "+T.f+" g fat" : "")+"."];
+  if (S.staples.length){
+    L.push("My planned staples:");
+    S.staples.forEach(function(x){ L.push("- "+x.n+(x.k != null ? " ("+x.k+" kcal, "+x.p+" g protein)" : "")+(x.d ? ": "+x.d : "")); });
+  }
   if (cw.n) L.push("Weight 7-day average: "+fkg(cw.v)+" kg"+(cw.n >= 2 && ow.n >= 2 ? " ("+signed(cw.v - ow.v)+" kg vs the previous 7 days)" : "")+".");
   if (mt.ok) L.push("Measured maintenance from my logs: about "+mt.v+" kcal.");
   var tS = 0, tW = 0, tV = 0;
@@ -1300,9 +1363,9 @@ document.addEventListener("click", function(e){
     case "restore":
       if (!U.restoreText.trim()){ toast("Paste a log first."); break; }
       var res = importLog(U.restoreText);
-      if (!res.sess && !res.body){ U.restoreMsg = "Nothing restored. Each exercise needs a name line, then lines like - 2026-10-06: 60x8, 60x8"; }
+      if (!res.sess && !res.body && !res.plan){ U.restoreMsg = "Nothing restored. Each exercise needs a name line, then lines like - 2026-10-06: 60x8, 60x8"; }
       else {
-        U.restoreMsg = "Restored "+res.ex+" exercise"+(res.ex===1?"":"s")+", "+res.sess+" session"+(res.sess===1?"":"s")+(res.body ? " and "+res.body+" body day"+(res.body===1?"":"s") : "")+".";
+        U.restoreMsg = "Restored "+res.ex+" exercise"+(res.ex===1?"":"s")+", "+res.sess+" session"+(res.sess===1?"":"s")+(res.body ? ", "+res.body+" body day"+(res.body===1?"":"s") : "")+(res.plan ? ", and your plan ("+S.staples.length+" staple"+(S.staples.length===1?"":"s")+")" : "")+".";
         U.restoreText = ""; save();
       }
       U.drafts = {}; render(); break;
@@ -1348,6 +1411,11 @@ document.addEventListener("click", function(e){
       if (!S.food[U.date]) S.food[U.date] = [];
       S.food[U.date].push({n:fnm, k:fk, p:fp, t:U.date === todayStr() ? hhmm() : "", ph:fa.ph || null});
       U.fDraft = null; save(); render(); toast("Added "+(fnm || "food")); break;
+    case "staple":
+      var sp = S.staples[+b.getAttribute("data-k")]; if (!sp) break;
+      if (!S.food[U.date]) S.food[U.date] = [];
+      S.food[U.date].push({n:sp.n, k:sp.k, p:sp.p, t:U.date === todayStr() ? hhmm() : ""});
+      save(); render(); toast("Added "+sp.n); break;
     case "fquick":
       var qf = recentFoods(U.date)[+b.getAttribute("data-k")]; if (!qf) break;
       if (!S.food[U.date]) S.food[U.date] = [];
