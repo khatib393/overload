@@ -155,14 +155,34 @@ section{margin-top:24px}
 .prog svg{display:block;width:100%;height:auto;margin:10px 0 4px}
 .prow{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--rule);font-size:15px;font-variant-numeric:tabular-nums}
 .prow span:last-child{text-align:right}
-
-.meal{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--rule)}
-.meal:last-child{border-bottom:none}
-.meal span{flex:1;word-break:break-word}
-.meal .mono{flex:none;font-family:var(--cond);color:var(--muted)}
-
+.entry .full{grid-column:1/-1}
+.chip small{margin-left:6px;font-size:16px;font-weight:500;color:var(--muted)}
+.bars{display:grid;gap:12px;margin-top:10px}
+.bar-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:15px;color:var(--muted)}
+.bar-top b{font:700 26px var(--cond);color:var(--ink);font-variant-numeric:tabular-nums}
+.track{height:10px;margin-top:4px;border:1px solid var(--rule);border-radius:999px;background:var(--bg);overflow:hidden}
+.fill{height:100%;border-radius:999px;background:var(--accent)}
+.fill.hit{background:var(--gain)}
+.fill.over{background:var(--warn)}
+.frow{display:grid;grid-template-columns:44px minmax(0,1fr) auto 34px;align-items:center;gap:6px;padding:8px 0;border-top:1px solid var(--rule);font-size:15px}
+.frow:first-child{border-top:0}
+.frow .tm{color:var(--muted);font:500 15px var(--cond);font-variant-numeric:tabular-nums}
+.frow .nm{overflow-wrap:anywhere}
+.frow .nums{color:var(--muted);font:600 16px var(--cond);white-space:nowrap;font-variant-numeric:tabular-nums}
+.frow button{width:34px;height:34px;border:0;background:none;color:var(--muted);font-size:20px}
+.flist{margin-top:10px}
+.frow .nm{display:flex;align-items:center;gap:8px}
+.thumb{flex:none;width:44px;height:44px;border-radius:6px;object-fit:cover;background:var(--bg);border:1px solid var(--rule)}
+.photorow{display:flex;align-items:center;gap:10px}
+.photorow .thumb{width:56px;height:56px}
+.pixgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
+.pixgrid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px}
+.qrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:12px}
+.qrow .lbl{margin-right:4px;font:600 16px var(--cond);color:var(--muted)}
+.qchip{min-height:36px;padding:4px 12px;border:1px dashed var(--muted);border-radius:6px;background:transparent;font:600 17px var(--cond);text-align:left}
+.qchip small{margin-left:6px;font-weight:500;color:var(--muted)}
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:10;display:flex;padding-bottom:env(safe-area-inset-bottom,0px);background:var(--surface);border-top:1px solid var(--rule)}
-nav.tabs button{flex:1;height:58px;border:0;background:none;color:var(--muted);font:600 18px var(--cond)}
+nav.tabs button{flex:1;height:58px;border:0;background:none;color:var(--muted);font:600 17px var(--cond)}
 nav.tabs button[aria-current="page"]{color:var(--ink);box-shadow:inset 0 3px 0 var(--plate)}
 
 #toast{position:fixed;left:50%;bottom:calc(70px + env(safe-area-inset-bottom,0px));transform:translate(-50%,12px);max-width:calc(100% - 32px);padding:10px 16px;border-radius:8px;background:var(--ink);color:var(--bg);font-size:15px;opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;z-index:20}
@@ -195,8 +215,8 @@ function blank(){
     ex: {},
     log: {},
     body: {},
-    meals: {},
-    diet: {kcal:2400, p:190, f:75},
+    food: {},
+    diet: {kcal:2400, p:190},
     defaults: {lo:8, hi:12, inc:2.5},
     backupAt: null
   };
@@ -216,8 +236,9 @@ function load(){
       S.schedule = Object.assign(blank().schedule, d.schedule || {});
       S.defaults = Object.assign(blank().defaults, d.defaults || {});
       S.ex = d.ex || {}; S.log = d.log || {};
-      S.body = d.body || {}; S.meals = d.meals || {};
+      S.body = d.body || {}; S.food = d.food || {};
       S.diet = Object.assign(blank().diet, d.diet || {});
+      migrateBody(d);
     } catch(e){
       try { localStorage.setItem(KEY + ":unreadable-" + Date.now(), raw); } catch(_){}
     }
@@ -225,94 +246,27 @@ function load(){
   try { localStorage.setItem(KEY + ":probe","1"); localStorage.removeItem(KEY + ":probe"); }
   catch(e){ storageOK = false; }
 }
+// Earlier Body version stored meals[] plus per-day kcal/protein totals. Fold them into food entries.
+function migrateBody(d){
+  if (d.meals){
+    Object.keys(d.meals).forEach(function(dt){
+      (d.meals[dt] || []).forEach(function(m){
+        if (!S.food[dt]) S.food[dt] = [];
+        S.food[dt].push({n:cleanName(m.label || ""), k:Math.round(num(m.kcal)) || 0, p:Math.round(num(m.p)) || 0, ph:m.photo || null});
+      });
+    });
+  }
+  Object.keys(S.body).forEach(function(dt){
+    var b = S.body[dt] || {};
+    if ((num(b.kcal) > 0 || num(b.p) > 0) && !(S.food[dt] || []).length){
+      S.food[dt] = [{n:"Day total", k:Math.round(num(b.kcal)) || 0, p:Math.round(num(b.p)) || 0}];
+    }
+    if (num(b.w) > 0) S.body[dt] = {w:num(b.w)}; else delete S.body[dt];
+  });
+  delete S.meals;
+}
 function save(){
   try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){ storageOK = false; }
-}
-
-/* ---------- photos: separate store so a big image can never break the log ---------- */
-var PIX = (function(){
-  var DB = "overload-photos", STORE = "photos", dbp = null;
-  function open(){
-    if (dbp) return dbp;
-    dbp = new Promise(function(res, rej){
-      var rq = indexedDB.open(DB, 1);
-      rq.onupgradeneeded = function(){ rq.result.createObjectStore(STORE); };
-      rq.onsuccess = function(){ res(rq.result); };
-      rq.onerror = function(){ rej(rq.error); };
-    });
-    return dbp;
-  }
-  function store(mode){
-    return open().then(function(db){ return db.transaction(STORE, mode).objectStore(STORE); });
-  }
-  function wrap(req){
-    return new Promise(function(res, rej){
-      req.onsuccess = function(){ res(req.result); };
-      req.onerror = function(){ rej(req.error); };
-    });
-  }
-  return {
-    put: function(id, blob){ return store("readwrite").then(function(st){ return wrap(st.put(blob, id)); }); },
-    get: function(id){ return store("readonly").then(function(st){ return wrap(st.get(id)); }); },
-    del: function(id){ return store("readwrite").then(function(st){ return wrap(st.delete(id)); }); }
-  };
-})();
-
-// Phone photos are 3-5 MB. Resize to 900px and re-encode — lands around 80-120 kB.
-function shrink(file, maxPx, quality){
-  return new Promise(function(res, rej){
-    var img = new Image(), url = URL.createObjectURL(file);
-    img.onload = function(){
-      var sc = Math.min(1, maxPx / Math.max(img.width, img.height));
-      var cv = document.createElement("canvas");
-      cv.width = Math.round(img.width * sc);
-      cv.height = Math.round(img.height * sc);
-      cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
-      URL.revokeObjectURL(url);
-      cv.toBlob(function(b){ b ? res(b) : rej(new Error("encode failed")); }, "image/jpeg", quality);
-    };
-    img.onerror = function(){ URL.revokeObjectURL(url); rej(new Error("decode failed")); };
-    img.src = url;
-  });
-}
-
-/* ---------- body ---------- */
-function bodyRow(date){ if (!S.body[date]) S.body[date] = {}; return S.body[date]; }
-function bodyDates(){ return Object.keys(S.body).sort(); }
-function mean(a){ return a.length ? a.reduce(function(x,y){ return x+y; }, 0) / a.length : null; }
-
-function weightSeries(){
-  return bodyDates()
-    .filter(function(d){ return num(S.body[d].w) > 0; })
-    .map(function(d){ return {d:d, w:num(S.body[d].w)}; });
-}
-
-// 7-day rolling average ending n entries from the latest
-function rollAvg(backBy){
-  var ws = weightSeries();
-  var end = ws.length - 1 - (backBy || 0);
-  if (end < 0) return null;
-  return mean(ws.slice(Math.max(0, end - 6), end + 1).map(function(x){ return x.w; }));
-}
-
-function avgOf(field, days){
-  var ds = bodyDates().filter(function(d){ return num(S.body[d][field]) > 0; });
-  if (days) ds = ds.slice(-days);
-  return ds.length ? mean(ds.map(function(d){ return num(S.body[d][field]); })) : null;
-}
-
-// Real maintenance from your own trend: intake adjusted by the weight change.
-function tdee(){
-  var ws = weightSeries();
-  var ks = bodyDates().filter(function(d){ return num(S.body[d].kcal) > 0; });
-  if (ws.length < 10 || ks.length < 10) return null;
-  var span = Math.round((parseDate(ws[ws.length-1].d) - parseDate(ws[0].d)) / 86400000);
-  if (span < 9) return null;
-  var k = Math.min(5, ws.length);
-  var first = mean(ws.slice(0, k).map(function(x){ return x.w; }));
-  var last  = mean(ws.slice(-k).map(function(x){ return x.w; }));
-  var avgK  = mean(ks.map(function(d){ return num(S.body[d].kcal); }));
-  return { value: Math.round(avgK - ((last - first) * 7700) / span), span: span, n: ws.length };
 }
 
 /* ---------- helpers ---------- */
@@ -388,7 +342,9 @@ function parseSets(str){
   return out.filter(function(x){ return isFinite(x[0]) && x[0] >= 0 && x[0] <= 1000 && x[1] >= 1 && x[1] <= 100; });
 }
 
-/* ---------- progression ---------- */
+/* ---------- progression ----------
+   Lighter sets BEFORE the first heaviest set = warm-ups / ramp sets: ignored.
+   Lighter sets AFTER it = drop sets: they block an increase. */
 function parts(sets){
   if (!sets || !sets.length) return {wu:[], work:[], top:0, drops:false};
   var top = Math.max.apply(null, sets.map(function(s){ return s[0]; }));
@@ -429,7 +385,7 @@ function warmups(w){
 }
 
 /* ---------- UI state ---------- */
-var U = {view:"today", date:todayStr(), autoDate:true, day:null, drafts:{}, typing:{}, typed:{}, editing:null, pending:null, fallback:null, restoreText:"", restoreMsg:"", eraseArm:false, dl:null, hist:30, histEx:null, pendingPix:null};
+var U = {view:"today", date:todayStr(), autoDate:true, day:null, drafts:{}, typing:{}, typed:{}, editing:null, pending:null, fallback:null, restoreText:"", restoreMsg:"", eraseArm:false, dl:null, hist:30, histEx:null, wDraft:null, fDraft:null, fEdit:false};
 U.day = dayOf(U.date);
 
 function draftFor(n){
@@ -446,77 +402,8 @@ function draftFor(n){
   }
   return {w: w === "" ? "" : String(w), r: String(r)};
 }
+
 /* ---------- views ---------- */
-function viewBody(){
-  var date = U.date, b = S.body[date] || {}, m = S.meals[date] || [];
-  var cur = rollAvg(0), prev = rollAvg(7);
-  var delta = (cur != null && prev != null) ? cur - prev : null;
-  var t = tdee();
-  var kcalToday = m.reduce(function(a,x){ return a + (num(x.kcal) || 0); }, 0);
-  var pToday    = m.reduce(function(a,x){ return a + (num(x.p) || 0); }, 0);
-
-  var h = '<header class="dayhead"><h1>Body</h1><div class="dateline">'
-        + '<input type="date" id="bdate" data-act="bdate" value="'+date+'" max="'+todayStr()+'"></div></header>';
-
-  h += '<div class="ex"><div class="row">'
-     + '<label>Fasted weight<input class="field" inputmode="decimal" data-act="bfield" data-f="w" value="'+(b.w != null ? b.w : "")+'" placeholder="kg"></label>'
-     + '<label>Calories<input class="field" inputmode="numeric" data-act="bfield" data-f="kcal" value="'+(b.kcal != null ? b.kcal : "")+'" placeholder="kcal"></label>'
-     + '<label>Protein<input class="field" inputmode="numeric" data-act="bfield" data-f="p" value="'+(b.p != null ? b.p : "")+'" placeholder="g"></label>'
-     + '</div>'
-     + '<p class="note">Weight: morning, after the toilet, before food. Same conditions every day or the trend is noise.</p></div>';
-
-  // headline
-  h += '<div class="ex"><h2>'+(cur != null ? r2(cur) + " kg" : "—")+'</h2>'
-     + '<p class="note">7-day average'
-     + (delta != null ? ' · <strong>'+(delta > 0 ? "+" : "")+r2(delta)+'</strong> vs previous week' : '')
-     + '</p>'
-     + '<p class="note">Avg intake '+(avgOf("kcal",14) != null ? Math.round(avgOf("kcal",14)) : "—")+' kcal · '
-     + (avgOf("p",14) != null ? Math.round(avgOf("p",14)) : "—")+'g protein · '+bodyDates().length+' days logged</p></div>';
-
-  // measured maintenance
-  h += '<div class="ex"><h2>'+(t ? t.value + " kcal" : "—")+'</h2>'
-     + '<p class="note">'+(t
-        ? 'Measured maintenance, from '+t.span+' days of your own weight and intake. Eat ~500 under it for 0.5 kg a week.'
-        : 'Needs ~10 days with both weight and calories. '
-          + Math.min(weightSeries().length, bodyDates().filter(function(d){ return num(S.body[d].kcal) > 0; }).length)
-          + ' so far.')+'</p></div>';
-
-  // targets
-  h += '<div class="ex"><h3>Targets</h3><div class="row">'
-     + '<label>kcal<input class="field num" inputmode="numeric" data-act="dfield" data-f="kcal" value="'+S.diet.kcal+'"></label>'
-     + '<label>protein<input class="field num" inputmode="numeric" data-act="dfield" data-f="p" value="'+S.diet.p+'"></label>'
-     + '<label>fat<input class="field num" inputmode="numeric" data-act="dfield" data-f="f" value="'+S.diet.f+'"></label>'
-     + '</div></div>';
-
-  // meals
-  h += '<div class="ex"><h3>Meals · '+Math.round(kcalToday)+' kcal, '+Math.round(pToday)+'g P</h3>';
-  h += m.map(function(x, i){
-    return '<div class="meal" data-i="'+i+'">'
-      + (x.photo ? '<img data-pix="'+esc(x.photo)+'" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:4px">' : '')
-      + '<span>'+esc(x.label || "Meal")+'</span>'
-      + '<span class="mono">'+(x.kcal || "—")+' kcal · '+(x.p || "—")+'g</span>'
-      + '<button class="link" data-act="mdel" data-i="'+i+'">remove</button></div>';
-  }).join("");
-  h += '<div class="row">'
-     + '<input class="field" id="mlabel" placeholder="what it was">'
-     + '<input class="field num" id="mkcal" inputmode="numeric" placeholder="kcal">'
-     + '<input class="field num" id="mp" inputmode="numeric" placeholder="protein g">'
-     + '</div>'
-     + '<label class="btn filebtn" style="margin-top:10px">Add photo<input type="file" accept="image/*" capture="environment" data-act="mphoto" hidden></label>'
-     + '<button class="btn primary" data-act="madd" style="margin-top:10px">Add meal</button></div>';
-
-  return h;
-}
-
-function paintPix(){
-  document.querySelectorAll("img[data-pix]").forEach(function(el){
-    var id = el.getAttribute("data-pix");
-    PIX.get(id).then(function(blob){
-      if (blob) el.src = URL.createObjectURL(blob);
-    }).catch(function(){});
-  });
-}
-
 function banner(){
   if (!storageOK) return '<p class="banner warn">This browser isn\'t saving your data. Copy your log from the Log tab before you close this page.</p>';
   if (!hasData()) return "";
@@ -678,33 +565,69 @@ function exportLog(){
       return "- "+d+": "+L[d].map(function(s){ return fset(s,"x"); }).join(", ");
     })).join("\n"));
   });
-
-  var bd = bodyDates().slice(-14);
-  if (bd.length){
-    var t2 = tdee(), cur2 = rollAvg(0), prev2 = rollAvg(7);
-    out.push(["BODY (last 14 days)"].concat(bd.map(function(d){
-      var r = S.body[d];
-      return "- " + d + ": " + (r.w != null ? r.w + "kg" : "—") + ", "
-           + (r.kcal != null ? r.kcal + " kcal" : "—") + ", "
-           + (r.p != null ? r.p + "g P" : "—");
-    })).join("\n"));
-    var sum = ["7-day weight avg: " + (cur2 != null ? r2(cur2) : "—")];
-    if (cur2 != null && prev2 != null) sum.push("vs prev week: " + (cur2 - prev2 > 0 ? "+" : "") + r2(cur2 - prev2));
-    sum.push("Avg intake: " + (avgOf("kcal",14) != null ? Math.round(avgOf("kcal",14)) : "—")
-           + " kcal, " + (avgOf("p",14) != null ? Math.round(avgOf("p",14)) : "—") + "g protein");
-    sum.push("Target: " + S.diet.kcal + " kcal, " + S.diet.p + "g protein, " + S.diet.f + "g fat");
-    if (t2) sum.push("Measured maintenance: ~" + t2.value + " kcal over " + t2.span + " days");
-    out.push(sum.join("\n"));
+  var bd = {};
+  Object.keys(S.body).forEach(function(d){ if (bw(d)) bd[d] = 1; });
+  Object.keys(S.food).forEach(function(d){ if (food(d).length) bd[d] = 1; });
+  var bds = Object.keys(bd).sort();
+  if (bds.length){
+    var td = todayStr(), cw = weekAvg(td, 0), ow = weekAvg(td, 7), wf = weekFood(td), mt = maintenance(td);
+    var lines = ["BODY"];
+    if (cw.n) lines.push("> Weight 7-day avg: "+fkg(cw.v)+" kg"+(cw.n >= 2 && ow.n >= 2 ? " ("+signed(cw.v - ow.v)+" vs previous 7 days)" : ""));
+    if (wf.c) lines.push("> Food 7-day avg: "+Math.round(wf.k)+" kcal, "+Math.round(wf.p)+" g protein ("+wf.c+" fully counted days)");
+    lines.push("> Targets: "+S.diet.kcal+" kcal, "+S.diet.p+" g protein"+(mt.ok ? ". Measured maintenance ~"+mt.v+" kcal" : ""));
+    bds.forEach(function(d){
+      lines.push("- "+d+":"+(bw(d) ? " "+fkg(bw(d))+" kg" : ""));
+      food(d).forEach(function(x){
+        lines.push("  * "+[x.t || "", x.n || "Food", x.k != null ? x.k+" kcal" : "", x.p != null ? x.p+" g" : ""].join(" | "));
+      });
+    });
+    out.push(lines.join("\n"));
   }
-
   return out.join("\n\n");
 }
 
+function importBodyLine(d, rest){
+  var wm = rest.match(/(\d+(?:[.,]\d+)?)\s*kg/i), km = rest.match(/(\d[\d,]*)\s*kcal/i), pm = rest.match(/(\d+)\s*(?:g\s*)?p\b/i);
+  var got = false;
+  if (wm && num(wm[1]) > 20){ S.body[d] = {w:num(wm[1])}; got = true; }
+  if (km || pm){
+    S.food[d] = [{n:"Day total", k:km ? parseInt(km[1].replace(/,/g,""), 10) : 0, p:pm ? parseInt(pm[1], 10) : 0}];
+    got = true;
+  }
+  return got;
+}
+
+function parseFoodItem(line){
+  var f = line.replace(/^\*\s*/, "").split("|").map(function(x){ return x.trim(); });
+  if (f.length < 2) return {n:cleanName(f[0] || ""), k:null, p:null, t:""};
+  var it = {t:/^\d{1,2}:\d{2}$/.test(f[0]) ? f[0] : "", n:cleanName(f[1] || ""), k:null, p:null};
+  f.slice(2).forEach(function(x){
+    var km = x.match(/^(\d+)\s*kcal$/i), pm = x.match(/^(\d+)\s*g$/i);
+    if (km) it.k = +km[1]; else if (pm) it.p = +pm[1];
+  });
+  return it;
+}
+
 function importLog(text){
-  var pend = null, cur = null, exSeen = {}, sess = 0, days = {};
+  var pend = null, cur = null, exSeen = {}, sess = 0, days = {}, mode = "ex", bodySeen = {}, bodyDate = null, itemsFor = {};
   String(text).split(/\r?\n/).forEach(function(raw){
     var line = raw.trim(); if (!line) return;
+    if (line.charAt(0) === ">") return;
+    if (/^body\b/i.test(line)){ mode = "body"; pend = null; cur = null; return; }
     var m = line.match(/^[-•*–]\s*(\d{4}-\d{2}-\d{2})\s*:?\s*(.*)$/);
+    if (mode === "body"){
+      if (m){ bodyDate = m[1]; if (importBodyLine(m[1], m[2])) bodySeen[m[1]] = 1; return; }
+      if (/^\*\s/.test(line) && bodyDate){
+        var it = parseFoodItem(line);
+        if (it.n || it.k != null || it.p != null){
+          if (!itemsFor[bodyDate]){ itemsFor[bodyDate] = 1; S.food[bodyDate] = []; }
+          S.food[bodyDate].push(it); bodySeen[bodyDate] = 1;
+        }
+        return;
+      }
+      if (/^[-•*–]/.test(line)) return;
+      mode = "ex";
+    }
     if (m){
       if (!pend) return;
       var sets = parseSets(m[2]); if (!sets.length) return;
@@ -738,7 +661,7 @@ function importLog(text){
       if (gap <= 14 && S.plan[day].indexOf(n) < 0) S.plan[day].push(n);
     });
   });
-  return {ex:Object.keys(exSeen).length, sess:sess};
+  return {ex:Object.keys(exSeen).length, sess:sess, body:Object.keys(bodySeen).length};
 }
 
 function allSessions(){
@@ -833,6 +756,276 @@ function viewHistory(){
   return h + body;
 }
 
+/* ---------- photos: kept apart from the log so a big image can never break it ---------- */
+var PIX = (function(){
+  var dbp = null;
+  function open(){
+    if (dbp) return dbp;
+    dbp = new Promise(function(res, rej){
+      var rq = indexedDB.open("overload-photos", 1);
+      rq.onupgradeneeded = function(){ rq.result.createObjectStore("photos"); };
+      rq.onsuccess = function(){ res(rq.result); };
+      rq.onerror = function(){ rej(rq.error); };
+    });
+    return dbp;
+  }
+  function run(mode, fn){
+    return open().then(function(db){
+      return new Promise(function(res, rej){
+        var rq = fn(db.transaction("photos", mode).objectStore("photos"));
+        rq.onsuccess = function(){ res(rq.result); };
+        rq.onerror = function(){ rej(rq.error); };
+      });
+    });
+  }
+  return {
+    put: function(id, blob){ return run("readwrite", function(st){ return st.put(blob, id); }); },
+    get: function(id){ return run("readonly", function(st){ return st.get(id); }); },
+    del: function(id){ return run("readwrite", function(st){ return st.delete(id); }); }
+  };
+})();
+function loadImg(blob){
+  return new Promise(function(res, rej){
+    var url = URL.createObjectURL(blob), img = new Image();
+    img.onload = function(){ URL.revokeObjectURL(url); res(img); };
+    img.onerror = function(){ URL.revokeObjectURL(url); rej(new Error("decode")); };
+    img.src = url;
+  });
+}
+function toJpeg(cv, q){ return new Promise(function(res, rej){ cv.toBlob(function(b){ b ? res(b) : rej(new Error("encode")); }, "image/jpeg", q); }); }
+// Phone photos are 3-5 MB; 1000 px at 0.72 lands around 100 kB and still shows the plate clearly.
+function shrink(file){
+  return loadImg(file).then(function(img){
+    var sc = Math.min(1, 1000 / Math.max(img.width, img.height)), cv = document.createElement("canvas");
+    cv.width = Math.round(img.width*sc); cv.height = Math.round(img.height*sc);
+    cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+    return toJpeg(cv, 0.72);
+  });
+}
+// Burn "Photo 3, Tue 6 Oct 13:10, Chicken rice" into the image so Claude can match it to the list.
+function captioned(blob, label){
+  return loadImg(blob).then(function(img){
+    var cv = document.createElement("canvas"), g = cv.getContext("2d");
+    cv.width = img.width; cv.height = img.height; g.drawImage(img, 0, 0);
+    var bh = Math.max(44, Math.round(img.width*0.075));
+    g.fillStyle = "rgba(0,0,0,0.72)"; g.fillRect(0, img.height-bh, img.width, bh);
+    g.fillStyle = "#fff"; g.textBaseline = "middle";
+    g.font = "600 "+Math.round(bh*0.48)+"px system-ui, -apple-system, sans-serif";
+    var txt = label;
+    while (g.measureText(txt).width > img.width-24 && txt.length > 6) txt = txt.slice(0, -2);
+    if (txt !== label) txt += "…";
+    g.fillText(txt, 12, img.height - bh/2);
+    return toJpeg(cv, 0.8);
+  });
+}
+function paintPix(){
+  var els = document.querySelectorAll("img[data-pix]");
+  for (var i = 0; i < els.length; i++) (function(el){
+    PIX.get(el.getAttribute("data-pix")).then(function(b){ if (b) el.src = URL.createObjectURL(b); }).catch(function(){});
+  })(els[i]);
+}
+// Photos older than 8 weeks are deleted (the food text stays). Keeps storage near 20 MB.
+function prunePhotos(){
+  var cutoff = addDays(todayStr(), -56), changed = false;
+  Object.keys(S.food).forEach(function(d){
+    if (d >= cutoff) return;
+    food(d).forEach(function(x){ if (x.ph){ PIX.del(x.ph).catch(function(){}); x.ph = null; changed = true; } });
+  });
+  if (changed) save();
+}
+
+/* ---------- body: weight + food ---------- */
+function mean(a){ return a.reduce(function(x,y){ return x+y; }, 0) / a.length; }
+function fkg(v){ return (Math.round(v*10)/10).toFixed(1); }
+function signed(v){ return (v < 0 ? "−" : "+") + fkg(Math.abs(v)); }
+function bw(d){ var b = S.body[d]; return b && b.w > 0 ? b.w : null; }
+function food(d){ return S.food[d] || []; }
+function foodTot(d){
+  var k = 0, p = 0, miss = 0;
+  food(d).forEach(function(x){ k += x.k || 0; p += x.p || 0; if (x.k == null) miss++; });
+  return {k:k, p:p, n:food(d).length, miss:miss};
+}
+function complete(d){ var t = foodTot(d); return t.n > 0 && t.miss === 0 && t.k > 0; }
+function hhmm(){ var n = new Date(); return pad(n.getHours())+":"+pad(n.getMinutes()); }
+function fnums(x){ return x.k == null && x.p == null ? "" : (x.k != null ? fvol(x.k)+" kcal" : "?")+(x.p != null ? ", "+x.p+" g" : ""); }
+function lastWeighIn(before){
+  var ds = Object.keys(S.body).filter(function(x){ return x < before && bw(x); }).sort();
+  return ds.length ? [ds[ds.length-1], bw(ds[ds.length-1])] : null;
+}
+function span(end, len, back){ var out = []; for (var i = back+len-1; i >= back; i--) out.push(addDays(end, -i)); return out; }
+function weekAvg(end, back){ var ws = span(end, 7, back).map(bw).filter(Boolean); return {n:ws.length, v:ws.length ? mean(ws) : null}; }
+function weekFood(end){
+  var all = span(end, 7, 0), ds = all.filter(complete);
+  return {n:all.filter(function(d){ return food(d).length; }).length, c:ds.length,
+          k:ds.length ? mean(ds.map(function(d){ return foodTot(d).k; })) : null,
+          p:ds.length ? mean(ds.map(function(d){ return foodTot(d).p; })) : null};
+}
+// Maintenance from your own numbers: average intake minus the energy in your weight trend
+// (least-squares slope over the last 28 days, 7,700 kcal per kg).
+function maintenance(end){
+  var ds = span(end, 28, 0), pts = [];
+  ds.forEach(function(d, i){ var w = bw(d); if (w) pts.push([i, w]); });
+  var fd = ds.filter(complete);
+  var ok = pts.length >= 10 && fd.length >= 10 && pts[pts.length-1][0] - pts[0][0] >= 13;
+  if (!ok) return {ok:false, w:pts.length, f:fd.length};
+  var mx = mean(pts.map(function(q){ return q[0]; })), my = mean(pts.map(function(q){ return q[1]; })), a = 0, b = 0;
+  pts.forEach(function(q){ a += (q[0]-mx)*(q[1]-my); b += (q[0]-mx)*(q[0]-mx); });
+  var slope = b ? a/b : 0;
+  return {ok:true, v:Math.round((mean(fd.map(function(d){ return foodTot(d).k; })) - slope*7700)/10)*10, weekly:slope*7};
+}
+function recentFoods(d){
+  var seen = {}, out = [];
+  Object.keys(S.food).filter(function(x){ return x <= d; }).sort().reverse().forEach(function(x){
+    food(x).slice().reverse().forEach(function(it){
+      if (out.length >= 6 || !it.n || it.n === "Day total") return;
+      var key = it.n.toLowerCase(); if (seen[key]) return;
+      seen[key] = 1; out.push(it);
+    });
+  });
+  return out;
+}
+function bar(label, val, goal, unit, isProtein){
+  var pct = goal > 0 ? Math.min(100, Math.round(val/goal*100)) : 0;
+  var cls = isProtein ? (val >= goal ? " hit" : "") : (val > goal ? " over" : "");
+  return '<div><div class="bar-top"><span>'+label+'</span><span><b>'+fvol(val)+'</b> / '+fvol(goal)+' '+unit+'</span></div>'
+       + '<div class="track"><div class="fill'+cls+'" style="width:'+pct+'%"></div></div></div>';
+}
+function fDraft(){ return U.fDraft || {n:"", k:"", p:""}; }
+
+function viewBody(){
+  var d = U.date, w = bw(d), prev = lastWeighIn(d);
+  var cur = weekAvg(d, 0), old = weekAvg(d, 7);
+  var delta = (cur.n >= 2 && old.n >= 2) ? cur.v - old.v : null;
+  var h = '<header class="dayhead"><h1>Body</h1><div class="dateline">'
+        + '<label class="sr" for="date">Date</label><input type="date" id="date" value="'+d+'" max="'+todayStr()+'">'
+        + (d !== todayStr() ? '<button class="link" data-act="today">Back to today</button>' : '')
+        + '</div></header>';
+
+  /* weight */
+  var wd = U.wDraft != null ? U.wDraft : (w ? fkg(w) : (prev ? fkg(prev[1]) : ""));
+  h += '<section class="ex st-'+(w ? "done" : (prev ? "due" : "new"))+'">';
+  h += '<div class="ex-head"><h2 class="ex-name">Weight</h2></div>';
+  h += prev ? '<p class="last">Last, <b>'+nice(prev[0])+'</b>: <span class="s">'+fkg(prev[1])+' kg</span></p>'
+            : '<p class="last">No weigh-ins yet.</p>';
+  if (cur.n){
+    h += '<div class="beat"><span class="lbl">7-day</span><span class="num">'+fkg(cur.v)+'<small>kg avg</small></span></div>';
+    h += '<p class="note">'+(delta != null ? signed(delta)+' kg vs the 7 days before. ' : 'Weekly change shows after two weeks. ')+cur.n+' of 7 days weighed.</p>';
+  }
+  if (w) h += '<div class="sets"><span class="chip">'+fkg(w)+' kg<button data-act="wdel" aria-label="Delete this weigh-in">×</button></span></div>';
+  h += '<div class="entry"><div class="full"><div class="step"><button data-act="bw-" aria-label="Less">−</button>'
+     + '<input data-f="bw" inputmode="decimal" enterkeyhint="done" value="'+esc(wd)+'" placeholder="kg" aria-label="Body weight in kg">'
+     + '<button data-act="bw+" aria-label="More">+</button></div><div class="step-lbl">kg, in the morning before food</div></div>'
+     + '<button class="logbtn" data-act="wlog">'+(w ? "Update weight" : "Log weight")+'</button></div>';
+  h += '</section>';
+
+  /* food */
+  var t = foodTot(d), T = S.diet, fd = fDraft();
+  var st = !t.n ? "due" : (t.p >= T.p && t.k <= T.kcal ? "done" : "going");
+  h += '<section class="ex st-'+st+'">';
+  h += '<div class="ex-head"><h2 class="ex-name">Food</h2><button class="range" data-act="fedit" aria-label="Edit daily targets">'+fvol(T.kcal)+' kcal, '+T.p+' g</button></div>';
+  h += '<div class="bars">'+bar("Calories", t.k, T.kcal, "kcal", false)+bar("Protein", t.p, T.p, "g", true)+'</div>';
+  if (t.n){
+    var lk = T.kcal - t.k, lp = T.p - t.p;
+    h += '<p class="note">'+(lk >= 0 ? fvol(lk)+' kcal left' : fvol(-lk)+' kcal over')+', '+(lp > 0 ? Math.round(lp)+' g protein to go.' : 'protein target hit.')
+       + (t.miss ? ' '+t.miss+' item'+(t.miss>1?"s":"")+' without numbers not counted; your weekly review estimates them.' : '')+'</p>';
+    h += '<div class="flist">'+food(d).map(function(x, i){
+      return '<div class="frow"><span class="tm">'+(x.t || "")+'</span><span class="nm">'+(x.ph ? '<img class="thumb" data-pix="'+esc(x.ph)+'" alt="">' : '')+esc(x.n || (x.ph ? "Photo" : "Food"))+'</span><span class="nums">'+fnums(x)+'</span>'
+           + '<button data-act="fdel" data-k="'+i+'" aria-label="Delete '+esc(x.n || "food")+'">×</button></div>';
+    }).join("")+'</div>';
+  } else {
+    h += '<p class="note">Nothing logged for '+(d === todayStr() ? "today" : nice(d))+' yet.</p>';
+  }
+  var rec = recentFoods(d);
+  if (rec.length){
+    h += '<div class="qrow"><span class="lbl">Again</span>'+rec.map(function(x, i){
+      return '<button class="qchip" data-act="fquick" data-k="'+i+'">'+esc(x.n)+(fnums(x) ? '<small>'+fnums(x)+'</small>' : '')+'</button>';
+    }).join("")+'</div>';
+  }
+  h += '<div class="entry">'
+     +   '<div class="full photorow">'+(fd.ph
+            ? '<img class="thumb" data-pix="'+esc(fd.ph)+'" alt="Photo to attach"><button class="link" data-act="fphotodel">Remove photo</button>'
+            : '<label class="btn filebtn">Add photo<input id="fphoto" class="sr" type="file" accept="image/*"></label><span class="note" style="margin:0">Optional. Best with a few words like "big plate".</span>')+'</div>'
+     +   '<input class="field full" data-f="fn" value="'+esc(fd.n)+'" placeholder="What and roughly how much: 2 rotis, big bowl dal" autocomplete="off" autocapitalize="sentences" enterkeyhint="done" aria-label="What you ate and how much">'
+     +   '<div><div class="step"><button data-act="fk-" aria-label="50 kcal less">−</button><input data-f="fk" inputmode="numeric" enterkeyhint="done" value="'+esc(fd.k)+'" placeholder="0" aria-label="Calories"><button data-act="fk+" aria-label="50 kcal more">+</button></div><div class="step-lbl">kcal, if known</div></div>'
+     +   '<div><div class="step"><button data-act="fp-" aria-label="5 g less">−</button><input data-f="fp" inputmode="numeric" enterkeyhint="done" value="'+esc(fd.p)+'" placeholder="0" aria-label="Protein in grams"><button data-act="fp+" aria-label="5 g more">+</button></div><div class="step-lbl">protein g, if known</div></div>'
+     +   '<button class="logbtn" data-act="fadd">Add food</button>'
+     + '</div>';
+  if (U.fEdit){
+    h += '<div class="settings">'
+       +   '<label>Daily calories <input class="field num" data-f="tk" inputmode="numeric" value="'+T.kcal+'"></label>'
+       +   '<label>Daily protein <input class="field num" data-f="tp" inputmode="numeric" value="'+T.p+'"> g</label>'
+       +   '<div class="row"><button class="btn primary" data-act="fsave">Save</button></div>'
+       + '</div>';
+  }
+  h += '</section>';
+
+  /* trend */
+  var ws = Object.keys(S.body).filter(bw).sort().slice(-30), wk = weekFood(d), mt = maintenance(d);
+  if (ws.length || wk.n){
+    h += '<div class="prog"><div class="hhead"><h2>Trend</h2>'+(ws.length ? '<span class="focus">Last '+ws.length+' weigh-ins</span>' : '')+'</div>';
+    if (ws.length >= 2) h += spark(ws.map(bw));
+    h += '<div class="prow"><span>Weight, 7-day average</span><span>'+(cur.n ? fkg(cur.v)+' kg'+(delta != null ? ' ('+signed(delta)+')' : '') : '—')+'</span></div>';
+    h += '<div class="prow"><span>Food, 7-day average</span><span>'+(wk.c ? fvol(wk.k)+' kcal, '+Math.round(wk.p)+' g' : '—')+'</span></div>';
+    h += '<div class="prow"><span>Maintenance, measured</span><span>'+(mt.ok ? '~'+fvol(mt.v)+' kcal' : 'not yet')+'</span></div>';
+    h += '<p class="note">'+(mt.ok
+        ? 'From your last 4 weeks of weight and food. Eating 500 under it loses about 0.45 kg a week. Only accurate if you log everything you eat.'
+        : 'Needs 10 weigh-ins and 10 food days across two weeks. You have '+mt.w+' and '+mt.f+'.')+'</p>';
+    if (wk.n) h += '<p class="note">Food logged on '+wk.n+' of the last 7 days'+(wk.c < wk.n ? ', '+wk.c+' with numbers on every item. Averages and maintenance use only those.' : '.')+'</p>';
+    h += '</div>';
+  }
+
+  /* weekly review */
+  h += '<div class="prog"><div class="hhead"><h2>Weekly review</h2></div>'
+     + '<p class="note">Copies the 7 days up to '+(d === todayStr() ? "today" : nice(d))+': every food with its time, your weight, training days, and a review request. Paste it into Claude.</p>'
+     + '<div class="row"><button class="btn primary" data-act="copyweek">Copy week for Claude</button></div>'
+     + (U.fallback && U.fallback.where === "week" ? fallbackBox(U.fallback.text) : '')
+     + (U.weekFiles && U.weekFiles.length
+        ? '<p class="note" style="margin-top:10px">Text copied. Next, share the '+U.weekFiles.length+' photo'+(U.weekFiles.length>1?"s":"")+' to Claude, then paste the text into the same message.</p>'
+          + '<div class="row"><button class="btn" data-act="sharepix">Share '+U.weekFiles.length+' photo'+(U.weekFiles.length>1?"s":"")+'</button></div>'
+        : '')
+     + (U.weekGrid ? '<p class="note" style="margin-top:10px">Sharing isn\'t available here. Press and hold each photo, then Save to Photos, and attach them in Claude.</p><div class="pixgrid">'+U.weekGrid.map(function(u){ return '<img src="'+u+'" alt="">'; }).join("")+'</div>' : '')
+     + '</div>';
+  return h;
+}
+
+function weekData(end){
+  var pix = [];
+  var text = weekText(end, function(d, x){
+    pix.push({id:x.ph, label:"Photo "+(pix.length+1)+", "+dayOf(d)+" "+nice(d)+(x.t ? " "+x.t : "")+(x.n ? ", "+x.n : "")});
+    return pix.length;
+  });
+  return {text:text, pix:pix};
+}
+function weekText(end, onPhoto){
+  var days = span(end, 7, 0), T = S.diet, cw = weekAvg(end, 0), ow = weekAvg(end, 7), mt = maintenance(end);
+  var L = ["Weekly review, "+nice(days[0])+" to "+nice(end)+" "+end.slice(0,4),
+           "Targets: "+T.kcal+" kcal and "+T.p+" g protein a day."];
+  if (cw.n) L.push("Weight 7-day average: "+fkg(cw.v)+" kg"+(cw.n >= 2 && ow.n >= 2 ? " ("+signed(cw.v - ow.v)+" kg vs the previous 7 days)" : "")+".");
+  if (mt.ok) L.push("Measured maintenance from my logs: about "+mt.v+" kcal.");
+  days.forEach(function(d){
+    var rows = names().filter(function(n){ return ((S.log[n]||{})[d]||[]).length; }).map(function(n){ return [n, S.log[n][d]]; });
+    var head = dayOf(d)+" "+nice(d)+":", bits = [];
+    if (bw(d)) bits.push(fkg(bw(d))+" kg");
+    if (rows.length){
+      var ws = 0; rows.forEach(function(r){ ws += parts(r[1]).work.length; });
+      bits.push("trained "+(S.schedule[planDayFor(rows, d)] || "")+" ("+rows.length+" exercise"+(rows.length>1?"s":"")+", "+ws+" working sets)");
+    } else bits.push("no training");
+    L.push(""); L.push(head+" "+bits.join(", ")+".");
+    var f = food(d);
+    if (!f.length){ L.push("- No food logged."); return; }
+    f.forEach(function(x){
+      var tag = (x.ph && onPhoto) ? " [photo "+onPhoto(d, x)+"]" : "";
+      L.push("- "+(x.t ? x.t+" " : "")+(x.n || (x.ph ? "Meal" : "Food"))+tag+(fnums(x) ? ": "+fnums(x) : ": no numbers"));
+    });
+    var t = foodTot(d);
+    L.push("Logged: "+t.k+" kcal, "+t.p+" g protein"+(t.miss ? " ("+t.miss+" item"+(t.miss>1?"s":"")+" without numbers)" : "")+".");
+  });
+  L.push("");
+  if (onPhoto && L.join("\n").indexOf("[photo ") >= 0) L.push("Photos are attached, numbered to match [photo N] above. Use them to judge portion sizes.");
+  L.push("Please estimate calories and protein for any items without numbers, then give me: my average daily calories and protein, how many days I hit "+T.p+" g protein, how my intake lines up with my weight trend, patterns worth fixing (timing, weekends, snacks, drinks), and 2 or 3 specific changes for next week.");
+  return L.join("\n");
+}
+
 function viewLog(){
   var txt = exportLog();
   var h = '<header class="dayhead"><h1>Your log</h1><p class="note">'
@@ -867,14 +1060,14 @@ function viewSetup(){
      + '<label>add <input class="field num" data-def="inc" inputmode="decimal" value="'+fw(S.defaults.inc)+'" aria-label="Weight increase in kg"> kg</label>'
      + '</div><p class="note">To change one exercise, tap its rep range on Today.</p></section>';
   h += '<section><h2>How targets work</h2><p>When every working set reaches the top of the rep range at your heaviest weight, the next target adds weight and starts back at the bottom of the range. Otherwise it keeps the weight and asks for one more rep per set. Lighter sets before your heaviest set count as warm-ups and are ignored. Lighter sets after it count as drop sets and hold the weight. Kg moved counts working sets only.</p></section>';
-  h += '<section><h2>Where your data lives</h2><p>Only in this browser on this phone. Open it the same way every time (same browser, or the same home-screen icon), because each keeps its own copy. Clearing browser data erases it, so copy your log to your notes every week.</p></section>';
+  h += '<section><h2>Where your data lives</h2><p>Only in this browser on this phone, including your weight and food. Open it the same way every time (same browser, or the same home-screen icon), because each keeps its own copy. Clearing browser data erases it, so copy your log to your notes every week.</p></section>';
   h += '<section><button class="btn danger" data-act="erase">'+(U.eraseArm ? "Tap again to erase everything" : "Erase all data")+'</button></section>';
   return h;
 }
 
 function render(){
   var app = document.getElementById("app");
-  app.innerHTML = U.view === "today" ? viewToday() : U.view === "history" ? viewHistory() : U.view === "log" ? viewLog() : U.view === "body" ? viewBody() : viewSetup();
+  app.innerHTML = U.view === "today" ? viewToday() : U.view === "history" ? viewHistory() : U.view === "body" ? viewBody() : U.view === "log" ? viewLog() : viewSetup();
   var tabs = document.querySelectorAll("nav.tabs button");
   for (var i=0;i<tabs.length;i++) tabs[i].setAttribute("aria-current", tabs[i].getAttribute("data-view") === U.view ? "page" : "false");
   if (U.view === "body") paintPix();
@@ -916,7 +1109,7 @@ function copyFlow(text, where){
     if (where === "log"){ S.backupAt = todayStr(); save(); }
     U.fallback = ok ? null : {where:where, text:text};
     render();
-    if (ok) toast(where === "log" ? "Log copied. Paste it into your notes." : "Session copied");
+    if (ok) toast(where === "log" ? "Log copied. Paste it into your notes." : where === "week" ? "Week copied. Paste it into Claude." : "Session copied");
   });
 }
 
@@ -961,15 +1154,6 @@ function pushSets(n, sets){
   save();
 }
 
-function rollUpMeals(date){
-  var m = S.meals[date] || []; if (!m.length) return;
-  var k = m.reduce(function(a,x){ return a + (num(x.kcal) || 0); }, 0);
-  var p = m.reduce(function(a,x){ return a + (num(x.p) || 0); }, 0);
-  var r = bodyRow(date);
-  if (k > 0) r.kcal = Math.round(k);
-  if (p > 0) r.p = Math.round(p);
-}
-
 document.addEventListener("click", function(e){
   var b = e.target.closest("[data-act]"); if (!b) return;
   var act = b.getAttribute("data-act");
@@ -983,7 +1167,7 @@ document.addEventListener("click", function(e){
     case "day":
       U.day = b.getAttribute("data-d"); U.drafts = {}; U.editing = null; U.pending = null; U.fallback = null; render(); break;
     case "today":
-      U.date = todayStr(); U.autoDate = true; U.day = dayOf(U.date); U.drafts = {}; U.fallback = null; render(); break;
+      U.date = todayStr(); U.autoDate = true; U.day = dayOf(U.date); U.drafts = {}; U.fallback = null; U.wDraft = null; U.fDraft = null; render(); break;
     case "w-": case "w+":
       d = Object.assign({}, draftFor(n)); c = cfg(n);
       base = num(d.w); if (!isFinite(base)) base = 0;
@@ -1002,20 +1186,6 @@ document.addEventListener("click", function(e){
       render();
       toast(n+", set "+S.log[n][U.date].length+": "+fset([r2(w), r], "×"));
       break;
-    case "madd":
-      var lab = (document.getElementById("mlabel")||{}).value || "";
-      var mk = num((document.getElementById("mkcal")||{}).value);
-      var mp = num((document.getElementById("mp")||{}).value);
-      if (!S.meals[U.date]) S.meals[U.date] = [];
-      S.meals[U.date].push({ label: cleanName(lab), kcal: isFinite(mk) ? mk : null, p: isFinite(mp) ? mp : null, photo: U.pendingPix || null });
-      U.pendingPix = null;
-      rollUpMeals(U.date); save(); render(); break;
-    case "mdel":
-      var mi = parseInt(b.getAttribute("data-i"), 10);
-      var gone = (S.meals[U.date] || [])[mi];
-      if (gone && gone.photo) PIX.del(gone.photo).catch(function(){});
-      (S.meals[U.date] || []).splice(mi, 1);
-      rollUpMeals(U.date); save(); render(); break;
     case "delset":
       var arr = (S.log[n]||{})[U.date];
       if (arr){
@@ -1074,8 +1244,11 @@ document.addEventListener("click", function(e){
     case "restore":
       if (!U.restoreText.trim()){ toast("Paste a log first."); break; }
       var res = importLog(U.restoreText);
-      if (!res.sess){ U.restoreMsg = "Nothing restored. Each exercise needs a name line, then lines like - 2026-10-06: 60x8, 60x8"; }
-      else { U.restoreMsg = "Restored "+res.ex+" exercise"+(res.ex>1?"s":"")+" and "+res.sess+" session"+(res.sess>1?"s":"")+"."; U.restoreText = ""; save(); }
+      if (!res.sess && !res.body){ U.restoreMsg = "Nothing restored. Each exercise needs a name line, then lines like - 2026-10-06: 60x8, 60x8"; }
+      else {
+        U.restoreMsg = "Restored "+res.ex+" exercise"+(res.ex===1?"":"s")+", "+res.sess+" session"+(res.sess===1?"":"s")+(res.body ? " and "+res.body+" body day"+(res.body===1?"":"s") : "")+".";
+        U.restoreText = ""; save();
+      }
       U.drafts = {}; render(); break;
     case "erase":
       if (!U.eraseArm){
@@ -1096,6 +1269,72 @@ document.addEventListener("click", function(e){
     case "openday":
       U.date = b.getAttribute("data-date"); U.autoDate = (U.date === todayStr()); U.day = b.getAttribute("data-d");
       U.view = "today"; U.drafts = {}; U.editing = null; U.fallback = null; render(); try { window.scrollTo(0,0); } catch(_){} break;
+    case "bw-": case "bw+":
+      var wv = num(U.wDraft != null ? U.wDraft : (document.querySelector('[data-f="bw"]') || {}).value);
+      if (!isFinite(wv)) wv = 0;
+      U.wDraft = fkg(Math.max(0, wv + (act === "bw+" ? 0.1 : -0.1))); render(); break;
+    case "wlog":
+      var wl = num(U.wDraft != null ? U.wDraft : (document.querySelector('[data-f="bw"]') || {}).value);
+      if (!(wl >= 30 && wl <= 300)){ toast("Enter your weight in kg."); break; }
+      S.body[U.date] = {w:Math.round(wl*10)/10}; U.wDraft = null; save(); render(); toast("Weight logged: "+fkg(wl)+" kg"); break;
+    case "wdel":
+      delete S.body[U.date]; U.wDraft = null; save(); render(); toast("Weigh-in deleted"); break;
+    case "fk-": case "fk+": case "fp-": case "fp+":
+      var fd0 = Object.assign({}, fDraft()), key = act.charAt(1), stepv = key === "k" ? 50 : 5;
+      var cv = parseInt(fd0[key], 10); if (!(cv >= 0)) cv = 0;
+      fd0[key] = String(Math.max(0, cv + (act.charAt(2) === "+" ? stepv : -stepv)));
+      U.fDraft = fd0; render(); break;
+    case "fadd":
+      var fa = fDraft(), fnm = cleanName(fa.n).replace(/\|/g, "/");
+      var fk = String(fa.k).trim() === "" ? null : parseInt(fa.k, 10), fp = String(fa.p).trim() === "" ? null : parseInt(fa.p, 10);
+      if (!(fk >= 0)) fk = null; if (!(fp >= 0)) fp = null;
+      if (!fnm && !fk && !fp && !fa.ph){ toast("Type what you ate or add a photo."); break; }
+      if (!S.food[U.date]) S.food[U.date] = [];
+      S.food[U.date].push({n:fnm, k:fk, p:fp, t:U.date === todayStr() ? hhmm() : "", ph:fa.ph || null});
+      U.fDraft = null; save(); render(); toast("Added "+(fnm || "food")); break;
+    case "fquick":
+      var qf = recentFoods(U.date)[+b.getAttribute("data-k")]; if (!qf) break;
+      if (!S.food[U.date]) S.food[U.date] = [];
+      S.food[U.date].push({n:qf.n, k:qf.k, p:qf.p, t:U.date === todayStr() ? hhmm() : ""}); save(); render(); toast("Added "+qf.n); break;
+    case "fdel":
+      var fl = S.food[U.date] || [], gone = fl[+b.getAttribute("data-k")];
+      if (gone && gone.ph) PIX.del(gone.ph).catch(function(){});
+      fl.splice(+b.getAttribute("data-k"), 1);
+      if (!fl.length) delete S.food[U.date];
+      save(); render(); toast("Removed"); break;
+    case "fphotodel":
+      var fdp = Object.assign({}, fDraft());
+      if (fdp.ph) PIX.del(fdp.ph).catch(function(){});
+      fdp.ph = null; U.fDraft = fdp; render(); break;
+    case "copyweek":
+      var wk2 = weekData(U.date);
+      U.weekFiles = null; U.weekGrid = null;
+      copyFlow(wk2.text, "week");
+      if (wk2.pix.length){
+        Promise.all(wk2.pix.map(function(x, i){
+          return PIX.get(x.id).then(function(bl){
+            return bl ? captioned(bl, x.label).then(function(c){ return new File([c], "photo-"+(i+1)+".jpg", {type:"image/jpeg"}); }) : null;
+          }).catch(function(){ return null; });
+        })).then(function(files){
+          U.weekFiles = files.filter(Boolean); render();
+        });
+      }
+      break;
+    case "sharepix":
+      var fls = U.weekFiles || [];
+      if (navigator.canShare && navigator.canShare({files:fls})){
+        navigator.share({files:fls}).catch(function(){});
+      } else {
+        U.weekGrid = fls.map(function(f){ return URL.createObjectURL(f); }); render();
+      }
+      break;
+    case "fedit":
+      U.fEdit = !U.fEdit; render(); break;
+    case "fsave":
+      var tk = parseInt(cardEl.querySelector('[data-f="tk"]').value, 10), tp = parseInt(cardEl.querySelector('[data-f="tp"]').value, 10);
+      if (!(tk >= 800 && tk <= 6000)){ toast("Calories between 800 and 6,000."); break; }
+      if (!(tp >= 0 && tp <= 400)){ toast("Protein between 0 and 400 g."); break; }
+      S.diet.kcal = tk; S.diet.p = tp; U.fEdit = false; save(); render(); toast("Targets saved"); break;
     case "gobackup":
       U.view = "log"; render(); try { window.scrollTo(0,0); } catch(_){} break;
   }
@@ -1108,6 +1347,10 @@ document.addEventListener("input", function(e){
   if (cardEl && (f === "w" || f === "r")){
     var n = cardEl.getAttribute("data-name");
     var d = Object.assign({}, draftFor(n)); d[f] = t.value; U.drafts[n] = d;
+  } else if (f === "bw"){
+    U.wDraft = t.value;
+  } else if (f === "fn" || f === "fk" || f === "fp"){
+    var fd1 = Object.assign({}, fDraft()); fd1[f.charAt(1)] = t.value; U.fDraft = fd1;
   } else if (cardEl && f === "t"){
     U.typed[cardEl.getAttribute("data-name")] = t.value;
   } else if (t.hasAttribute("data-sched")){
@@ -1119,42 +1362,29 @@ document.addEventListener("input", function(e){
 
 document.addEventListener("change", function(e){
   var t = e.target;
-  var act = t.getAttribute("data-act");
-  
-  if (act === "bfield"){
-    var v = num(t.value);
-    bodyRow(U.date)[t.getAttribute("data-f")] = isFinite(v) ? v : null;
-    save(); render(); return;
-  }
-  if (act === "dfield"){
-    var dv = num(t.value);
-    if (isFinite(dv)) { S.diet[t.getAttribute("data-f")] = dv; save(); }
+  if (t.id === "fphoto"){
+    var pf = t.files && t.files[0]; if (!pf) return;
+    toast("Adding photo…");
+    shrink(pf).then(function(bl){
+      var id = U.date + "-" + Date.now();
+      return PIX.put(id, bl).then(function(){
+        var fd2 = Object.assign({}, fDraft()); fd2.ph = id; U.fDraft = fd2; render(); toast("Photo ready. Add a few words, then Add food.");
+      });
+    }).catch(function(){ toast("Couldn't save that photo."); });
     return;
   }
-  if (act === "bdate"){ U.date = t.value; render(); return; }
-  if (act === "mphoto"){
-    var f = t.files && t.files[0]; if (!f) return;
-    shrink(f, 900, 0.7)
-      .then(function(blob){
-        var id = U.date + "-" + Date.now();
-        return PIX.put(id, blob).then(function(){ U.pendingPix = id; toast("Photo attached"); });
-      })
-      .catch(function(){ toast("Couldn't save that photo"); });
-    return;
-  }
-
   if (t.id === "restorefile"){
-    var f2 = t.files && t.files[0]; if (!f2) return;
+    var f = t.files && t.files[0]; if (!f) return;
     var rd = new FileReader();
-    rd.onload = function(){ U.restoreText = String(rd.result || ""); U.restoreMsg = "Loaded "+f2.name+". Tap Restore to add it."; render(); };
+    rd.onload = function(){ U.restoreText = String(rd.result || ""); U.restoreMsg = "Loaded "+f.name+". Tap Restore to add it."; render(); };
     rd.onerror = function(){ U.restoreMsg = "Couldn't read that file. Open it, copy the text, and paste it above."; render(); };
-    rd.readAsText(f2);
+    rd.readAsText(f);
     return;
   }
   if (t.id === "date"){
     if (!/^\d{4}-\d{2}-\d{2}$/.test(t.value)) return;
     U.date = t.value; U.autoDate = (t.value === todayStr()); U.day = dayOf(U.date);
-    U.drafts = {}; U.fallback = null; render();
+    U.drafts = {}; U.fallback = null; U.wDraft = null; U.fDraft = null; render();
   } else if (t.hasAttribute("data-def")){
     var k = t.getAttribute("data-def"), v = k === "inc" ? num(t.value) : parseInt(t.value, 10);
     var nd = Object.assign({}, S.defaults); nd[k] = k === "inc" ? r2(v) : v;
@@ -1170,7 +1400,7 @@ document.addEventListener("keydown", function(e){
   else if (t.getAttribute("data-f") === "t"){
     e.preventDefault();
     var btn = t.closest(".ex").querySelector('[data-act="logtyped"]'); if (btn) btn.click();
-  } else if (t.getAttribute("data-f") === "w" || t.getAttribute("data-f") === "r"){
+  } else if (["w","r","bw","fn","fk","fp"].indexOf(t.getAttribute("data-f")) >= 0){
     e.preventDefault(); t.blur();
   }
 });
@@ -1183,6 +1413,7 @@ document.addEventListener("visibilitychange", function(){
 
 load();
 render();
+try { prunePhotos(); } catch(e){}
 
 if (window.claude && typeof window.claude.use === "function"){
   window.claude.use("downloads").then(function(dl){
