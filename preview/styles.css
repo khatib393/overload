@@ -108,3 +108,74 @@ body[data-theme="black"] .summary-card{background:#0C0C0E}body[data-theme="dark"
 @media(max-width:355px){.four-metrics{grid-template-columns:repeat(2,1fr)}.today-metric{min-height:105px}.score-copy small{display:none}.dashboard-score{gap:10px}.overline-row{font-size:11px}}
 
 .warmup-option{margin-top:12px;color:var(--muted);font-size:13px}.warmup-option label{display:inline-flex;align-items:center;gap:8px}.warmup-option input{width:18px;height:18px;accent-color:var(--brand)}.prev-hint{margin-top:8px}.training-form input:focus{border-color:var(--brand)}
+
+
+/* v2.1: compact session-oriented training screen, not one row per set. */
+.training-head{display:flex;align-items:end;justify-content:space-between;gap:15px;margin:14px 0 20px}
+.training-head h1{font-size:clamp(31px,6vw,49px);font-weight:830;letter-spacing:-.06em;line-height:1.1;margin:6px 0}
+.training-head h1 span{color:var(--brand)}
+.training-sub{color:var(--muted);font-size:13px;line-height:1.5}
+.training-date{font-size:12px;font-weight:730;color:var(--muted);white-space:nowrap;padding-bottom:6px}
+.session-overview{background:var(--forest);color:#fff;padding:21px 23px;border-radius:23px;display:flex;gap:20px;align-items:center;justify-content:space-between;margin-bottom:16px}
+.session-overview>div:first-child{display:flex;flex-direction:column;gap:7px;min-width:0}
+.overview-kicker{font-size:10px;font-weight:800;letter-spacing:.16em;color:#B8CDEE}
+.session-overview strong{font-size:22px;letter-spacing:-.04em;line-height:1.12}
+.session-overview small{font-size:11px;color:#C1D4ED;line-height:1.3}
+.overview-stats{display:flex;gap:14px;flex:none}
+.overview-stats span{font-size:10px;line-height:1.3;display:flex;flex-direction:column;align-items:center;color:#D1DBED}
+.overview-stats b{font-size:23px;color:white;font-weight:800}
+.training-stack{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+.training-stack .card{margin:0}
+.train-section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+.train-section-title h2{margin:3px 0 0;font-size:20px}
+.exercise-chips{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;padding:1px 0 14px;margin:0 -2px}
+.exercise-chips::-webkit-scrollbar{display:none}
+.exercise-chip{flex:none;white-space:nowrap;min-height:36px;border-radius:999px;padding:7px 12px;border:1px solid var(--line);background:var(--pale);color:var(--ink);font-size:12px;font-weight:730}
+.exercise-chip.picked{background:var(--accent2);color:var(--brand);border-color:var(--brand)}
+.training-form-v2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.training-form-v2 .exercise-field{grid-column:1/-1}
+.training-form-v2 .formrow input{width:100%;height:49px;border-radius:13px;padding:10px 12px;font-size:16px}
+.training-form-v2 .formrow label{font-size:10px;letter-spacing:.09em}
+.warmup-check{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:13px;min-height:48px}
+.warmup-check input{width:18px;height:18px;accent-color:var(--brand)}
+.add-set-button{width:100%;height:48px;font-size:14px}
+.training-previous{font-size:12px;color:var(--muted);line-height:1.55;background:var(--pale);border-radius:13px;margin-top:13px;padding:12px 13px}
+.training-today{grid-column:2}
+.training-history{grid-column:1/-1}
+.training-empty{font-size:13px;color:var(--muted);padding:11px 0 5px;line-height:1.55}
+.training-exercise-group{border-top:1px solid var(--line);padding:14px 0 13px}
+.training-exercise-group:first-of-type{border-top:0}
+.train-group-header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:9px}
+.train-group-header strong{font-size:14px;letter-spacing:-.012em}
+.train-group-header small{color:var(--muted);font-size:11px;white-space:nowrap}
+.training-sets{display:flex;gap:7px;flex-wrap:wrap}
+.training-set{display:inline-flex;align-items:center;gap:6px;min-height:33px;padding:6px 9px;border-radius:9px;background:var(--pale);border:1px solid var(--line);font-size:12px;font-weight:740;font-variant-numeric:tabular-nums;color:var(--ink)}
+.training-set.warm{color:var(--muted);background:transparent;border-style:dashed}
+.training-set small{font-size:9px;opacity:.65}
+.training-set button{background:transparent;border:0;color:var(--muted);font-size:20px;line-height:1;padding:0 1px 2px;min-height:24px;min-width:22px}
+.history-session{border-top:1px solid var(--line)}
+.history-session:first-child{border-top:0}
+.history-session summary{list-style:none;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 2px;cursor:pointer}
+.history-session summary::-webkit-details-marker{display:none}
+.history-session summary strong{font-size:14px;display:block}
+.history-session summary small{font-size:11px;color:var(--muted);display:block;margin-top:4px}
+.history-chevron{font-size:22px;color:var(--muted);transition:transform .15s}
+.history-session[open] .history-chevron{transform:rotate(180deg)}
+.history-content{padding:0 3px 13px}
+.history-exercise{padding:12px 0;border-top:1px solid var(--line)}
+.history-exercise:first-child{border-top:0;padding-top:0}
+.history-exercise strong{font-size:13px;display:block;margin-bottom:8px}
+.prestart-notice{max-width:640px;margin:0 auto 13px}
+@media(max-width:760px){
+ .training-stack{grid-template-columns:minmax(0,1fr)}.training-today,.training-history{grid-column:auto}
+ .training-head{align-items:start}.training-head h1{font-size:37px}.session-overview{padding:18px}
+ .overview-stats{gap:9px}.overview-stats b{font-size:20px}
+}
+@media(max-width:410px){
+ .session-overview{gap:10px}.session-overview strong{font-size:18px}
+ .training-head{margin-top:10px}.training-date{font-size:11px}
+ .training-stack .card{padding:17px}.training-previous{font-size:12px}
+ .training-set{font-size:12px}
+}
+
+.older-workouts{width:100%;margin-top:13px;font-size:13px}
