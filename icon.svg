@@ -1,1 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" fill="#1464E8" rx="44"/><path d="M43 57h42a39 39 0 0 1 0 78H43zm32 22H65v34h10a17 17 0 0 0 0-34Z" fill="#FFFFFF"/><circle cx="129" cy="97" r="14" fill="#FFFFFF"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="Overload electric blue O dot icon">
+<defs>
+  <linearGradient id="base" x1=".15" x2=".85" y1="0" y2="1" gradientUnits="objectBoundingBox">
+    <stop offset="0" stop-color="#0466FB"/><stop offset=".48" stop-color="#034AE6"/><stop offset="1" stop-color="#061493"/>
+  </linearGradient>
+  <radialGradient id="light" cx="80%" cy="12%" r="83%">
+    <stop offset="0" stop-color="#11AEFF" stop-opacity=".96"/>
+    <stop offset=".42" stop-color="#0877F9" stop-opacity=".25"/>
+    <stop offset="1" stop-color="#0877F9" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="sweep" x1="0" y1="0" x2="1" y2="1">
+    <stop stop-color="#0356EE" stop-opacity=".0"/><stop offset="1" stop-color="#092ED7" stop-opacity=".62"/>
+  </linearGradient>
+</defs>
+<rect width="1024" height="1024" fill="url(#base)"/>
+<rect width="1024" height="1024" fill="url(#light)"/>
+<path d="M 250 1010 C 550 970 780 885 1024 578 L 1024 1024 L 250 1024Z" fill="url(#sweep)"/>
+<circle cx="429" cy="510" r="194" fill="none" stroke="white" stroke-width="108"/>
+<circle cx="781" cy="510" r="56" fill="white"/>
+</svg>
