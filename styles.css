@@ -290,3 +290,15 @@ body[data-theme="black"] .summary-card{background:#0C0C0E}body[data-theme="dark"
 .bottomnav .navitem{transition:color .16s}
 @media(max-width:420px){.session-exercise-card{padding:21px 15px}.session-choice{padding:13px 12px}.session-page-head h1{font-size:35px}.session-live{padding:8px 10px}}
 @media(prefers-reduced-motion:reduce){.session-live i,.session-set-new,.session-saved-banner,.session-saved-btn,.session-finished-icon{animation:none!important}.session-big-btn,.session-choice,.session-finish-exercise,.session-choice,.bottomnav .navitem{transition:none!important}}
+
+/* v2.4 focus, journal and release controls */
+.day-shortcuts{display:flex;gap:8px;margin:10px 0}.day-shortcuts .small-action{flex:1;min-height:37px}
+.rhythm-detail{display:block;font-size:.82rem;opacity:.72;margin-top:4px;line-height:1.45}.time-block strong{font-weight:700}
+.session-actions{display:flex;flex-direction:column;gap:10px;margin-top:12px}.danger-action{border:1px solid #bb6670;color:#b54955}
+.session-add-future{display:flex;align-items:center;gap:9px;font-size:.82rem;line-height:1.4;margin:10px 0;color:var(--muted,#627187)}
+.journal-history{margin-top:18px}.journal-entry{display:flex;width:100%;justify-content:space-between;align-items:center;text-align:left;padding:13px 0;gap:14px;border:0;background:transparent;border-bottom:1px solid rgba(130,140,160,.17);color:inherit;cursor:pointer}
+.journal-entry>span:first-child{display:flex;flex-direction:column;gap:5px;min-width:0}.journal-entry small{font-size:.82rem;white-space:normal;overflow-wrap:anywhere;opacity:.78}.note-counter{display:block;text-align:right;opacity:.7;font-size:.78rem}
+button:not(:disabled){-webkit-tap-highlight-color:transparent;transition:transform .14s ease,filter .14s ease,background-color .14s ease}
+button:not(:disabled):active{transform:scale(.978);filter:brightness(.93)}
+button:focus-visible{outline:3px solid #2b76ef;outline-offset:3px}
+@media (prefers-reduced-motion:reduce){button:not(:disabled){transition:none}}
