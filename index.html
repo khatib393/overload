@@ -7,7 +7,7 @@
   <meta name="description" content="Your private, on-device training and routine tracker.">
   <link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=2-1"><title>Overload — Make it count.</title>
+  <link rel="stylesheet" href="styles.css?v=2-2"><title>Overload — Make it count.</title>
 </head>
 <body>
   <div class="app" id="app">
@@ -21,9 +21,10 @@
     </nav>
   </div>
   <div id="toast" role="status" aria-live="polite"></div>
+  <div class="copy-fallback" id="copyFallback" hidden><div class="copy-card"><h2>Copy weekly report</h2><p>Select all text and tap Copy, then paste into your AI chat.</p><textarea id="copyFallbackText" readonly aria-label="Weekly report"></textarea><button type="button" id="closeCopyFallback" onclick="document.getElementById('copyFallback').hidden=true">Close</button></div></div>
   <input type="file" id="planPicker" hidden accept="application/json,.json">
   <input type="file" id="backupPicker" hidden accept="application/json,.json">
   <input type="file" id="workoutTextPicker" hidden accept="text/plain,.txt">
-  <script src="app.js?v=2-1" defer></script>
+  <script src="app.js?v=2-2" defer></script>
 </body>
 </html>
