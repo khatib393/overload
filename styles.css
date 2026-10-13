@@ -302,3 +302,8 @@ button:not(:disabled){-webkit-tap-highlight-color:transparent;transition:transfo
 button:not(:disabled):active{transform:scale(.978);filter:brightness(.93)}
 button:focus-visible{outline:3px solid #2b76ef;outline-offset:3px}
 @media (prefers-reduced-motion:reduce){button:not(:disabled){transition:none}}
+
+/* v2.5: simple accessible workout selector */
+.session-choice-label{display:block;color:var(--muted);font-size:11px;font-weight:800;letter-spacing:.10em;margin:15px 0 8px}
+.session-workout-select{display:block;width:100%;max-width:440px;padding:14px 16px;border:1px solid var(--line);border-radius:13px;font-weight:750;background:var(--card);color:var(--ink);margin:0 0 12px}
+.session-choice-note{margin-bottom:14px!important}

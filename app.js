@@ -1,7 +1,7 @@
 /* Overload v2: entirely on-device. No analytics, API calls, trackers or cloud sync. */
 (() => {
 'use strict';
-const APP_VERSION='2.4.0';
+const APP_VERSION='2.5.0';
 const DB_NAME='overload-private-v2', OLD_KEY='overload-log-v1', BACKUP_SCHEMA='overload-backup-v2';
 const CHECKS=[
   ['wake','Wake on schedule','☀','Keep a steady start'],['breakfast','Breakfast','◕','Fuel your morning'],
@@ -13,7 +13,7 @@ const CHECKS=[
 const RECOVERY=[['wake','Wake on schedule','☀','Keep your anchor'],['breakfast','Breakfast','◕','First meal'],['useful','10-minute useful action','◇','Anything that helps'],['night','Evening log','☾','Close the day']];
 const WEEKDAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const $=id=>document.getElementById(id);let state, route='today', selectedDate='', db=null, memoryMode=false, legacyAvailable=false; let writeQueue=Promise.resolve();let selectedExercise='';let historyLimit=8,autoDay=true,lastLogDay='';
-const blank=()=>({version:2,config:null,habits:{},workouts:{},weights:{},meals:{},gymSchedule:{},stages:[],settings:{theme:'auto',themeTimes:{light:'07:00',dark:'17:00',black:'22:00'}},legacyImported:false,exerciseConfig:{},exercisePlan:{},workoutTemplates:{},trainingSessions:{},weightMeta:{},routineVersions:[],created:new Date().toISOString()});
+const blank=()=>({version:2,config:null,habits:{},workouts:{},weights:{},meals:{},gymSchedule:{},stages:[],settings:{theme:'auto',themeTimes:{light:'07:00',dark:'17:00',black:'22:00'}},legacyImported:false,exerciseConfig:{},exercisePlan:{},workoutTemplates:{},trainingSessions:{},workoutChoices:{},weightMeta:{},routineVersions:[],created:new Date().toISOString()});
 const escapeHTML=s=>String(s??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const pad=n=>String(n).padStart(2,'0');
 const THEMES=['auto','light','dark','black'];
@@ -184,7 +184,7 @@ function pickExercise(name){
 }
 /* On-device routine templates. Nothing personal ships in the GitHub files. */
 const ROUTINE_GROUPS=['legs','push','pull','run'];
-const groupFromDate=d=>{
+const scheduledGroupFromDate=d=>{
  const label=String(scheduled(d)?.label||'').toLowerCase();
  if(/leg|lower/.test(label))return 'legs';
  if(/push|chest|shoulder/.test(label))return 'push';
@@ -193,6 +193,15 @@ const groupFromDate=d=>{
  return {1:'legs',2:'push',4:'pull',6:'run'}[wday(d)]||null;
 };
 const routineNames={legs:'Legs',push:'Push',pull:'Pull',run:'Easy run'};
+const groupFromDate=d=>{
+ const session=state.trainingSessions?.[d];
+ // An active or finished session keeps its original workout type for history.
+ if(session?.status!=='cancelled'&&ROUTINE_GROUPS.includes(session?.group))return session.group;
+ // Workout choices apply to the chosen day, never rewrite the weekly training schedule.
+ const chosen=d<=today()?state.workoutChoices?.[d]:undefined;
+ if(chosen==='rest')return null;
+ return ROUTINE_GROUPS.includes(chosen)?chosen:scheduledGroupFromDate(d);
+};
 function categoryForExercise(name){
  const n=String(name||'').toLowerCase();
  if(/leg press|squat|lunge|rdl|romanian|deadlift|hamstring|quad|calf|leg curl|leg extension|hip thrust/.test(n))return 'legs';
@@ -273,11 +282,11 @@ function weeklyTrainingSummary(){
  const actual=days.filter(d=>(state.workouts[d]||[]).length>0);
  lines.push(`Training sessions logged: ${actual.length} · planned lifting days: ${workdays.length}.`);
  for(const d of days){
-  const group=groupFromDate(d),scheduledName=scheduled(d)?.label||routineNames[group]||'Rest';
+  const group=groupFromDate(d),scheduledName=state.workoutChoices?.[d]||currentSession(d)?.group?(routineNames[group]||'Rest day'):(scheduled(d)?.label||routineNames[group]||'Rest');
   const logged=workoutGroups(d);
-  if(!scheduled(d)&&!logged.length)continue;
+  if(!scheduled(d)&&!logged.length&&!Object.prototype.hasOwnProperty.call(state.workoutChoices||{},d))continue;
   lines.push(`\n${d} ${shortDay(d)} · ${scheduledName} · ${logged.length?'Logged':'Not logged'}`);
-  if(!logged.length){const template=templateList(group);if(template.length)lines.push('Planned exercises: '+template.join(', '));continue;}
+  if(!logged.length){const template=group?templateList(group):[];if(template.length)lines.push('Planned exercises: '+template.join(', '));continue;}
   for(const exercise of logged){
    const work=exercise.sets.filter(x=>!x.warmup),previous=previousExerciseAt(exercise.name,d);
    const prevWork=previous?.sets.filter(x=>!x.warmup)||[];
@@ -326,8 +335,10 @@ function sessionStart(){
  const old=currentSession(d);
  if(old?.status==='active'){render();return}
  if(old?.status==='finished'){toast('Session already finished. Reopen from the summary if needed.');return}
+ const group=groupFromDate(d);
+ if(!ROUTINE_GROUPS.includes(group)){toast('Choose a workout first');return}
  state.trainingSessions=state.trainingSessions||{};
- state.trainingSessions[d]={id:sessionNewId(),status:'active',startedAt:stamp(),finishedAt:null,completedExercises:[],exerciseNames:templateList(groupFromDate(d)).slice()};
+ state.trainingSessions[d]={id:sessionNewId(),group,status:'active',startedAt:stamp(),finishedAt:null,completedExercises:[],exerciseNames:templateList(group).slice()};
  activeSessionExercise='';savedSessionSet=false;persist();render();
 }
 function sessionSelectExercise(name){
@@ -407,7 +418,9 @@ function finishedSessionCard(d){const s=currentSession(d);if(s?.status==='cancel
 function gymView(){
  if(selectedDate===today()&&currentSession(selectedDate)?.status==='active')return sessionFocusView(selectedDate);
  const d=selectedDate,plan=scheduled(d),groups=workoutGroups(d),allHistory=historyDates(),recent=allHistory.slice(0,historyLimit),all=trainingSuggestions(),chosen=selectedExercise;
- const planned=plan?.label||'Choose your session';
+ const chosenGroup=groupFromDate(d);
+ const hasChoice=!!currentSession(d)?.group||Object.prototype.hasOwnProperty.call(state.workoutChoices||{},d);
+ const planned=hasChoice?(chosenGroup?routineNames[chosenGroup]:'Rest day'):(plan?.label||'Choose your session');
  const workingCount=groups.reduce((n,g)=>n+g.sets.filter(s=>!s.warmup).length,0);
  const allExercises=new Set([...all,...Object.values(state.gymSchedule||{}).flatMap(x=>x.exerciseNames||[]),...Object.values(state.exercisePlan||{}).flatMap(x=>Array.isArray(x)?x:[])]);
  const hints=[...allExercises].sort().map(name=>`<option value="${escapeHTML(name)}"></option>`).join('');
@@ -417,11 +430,17 @@ function gymView(){
  const prev=chosen?previousExercise(chosen,d):null;
  const initial=lastCurrent||prev?.sets.filter(s=>!s.warmup).at(-1)||prev?.sets.at(-1)||null;
  return `<div class="training-head"><div><p class="eyebrow">TRAINING / PRIVATE HISTORY</p><h1>Your training<span>.</span></h1><p class="training-sub">Keep moving forward, one quality set at a time.</p></div><span class="training-date">${pretty(d)}</span></div>
- <div class="session-overview"><div><span class="overview-kicker">${plan?'YOUR PLAN':'WORKOUT JOURNAL'}</span><strong>${escapeHTML(planned)}</strong><small>${isFuture?'Choose today or an earlier date to log':groups.length?'Session in progress · Saved on this device':'Ready when you are'}</small></div><div class="overview-stats"><span><b>${groups.length}</b> exercises</span><span><b>${workingCount}</b> working sets</span></div></div>
+ <div class="session-overview"><div><span class="overview-kicker">${hasChoice?'YOUR SELECTED WORKOUT':plan?'YOUR PLAN':'WORKOUT JOURNAL'}</span><strong>${escapeHTML(planned)}</strong><small>${isFuture?'Choose today or an earlier date to log':groups.length?'Session in progress · Saved on this device':'Ready when you are'}</small></div><div class="overview-stats"><span><b>${groups.length}</b> exercises</span><span><b>${workingCount}</b> working sets</span></div></div>
  <div class="training-stack">
   ${finishedSessionCard(d)}
   ${d!==today()&&currentSession(d)?.status==='active'?`<section class="card session-old-active"><h2>Earlier workout still open</h2><p>This older session was never finished. You can cancel it without deleting its saved sets.</p><button class="secondary danger-action" data-action="sessionCancel">Cancel earlier workout</button></section>`:''}
-  ${d===today()&&(!currentSession(d)||currentSession(d).status==='cancelled')?`<section class="card session-launch"><p class="eyebrow">TODAY'S SESSION</p><h2>Ready to train?</h2><p>Start a focused ${escapeHTML(routineNames[groupFromDate(d)]||'workout')} session. See only today's exercises, past weights and saved sets.</p><button class="primary session-big-btn" data-action="sessionStart">▶ Start session</button></section>`:''}
+  ${d===today()&&(!currentSession(d)||currentSession(d).status==='cancelled')?`<section class="card session-launch"><p class="eyebrow">TODAY'S SESSION</p><h2>Choose your workout</h2>
+ <label class="session-choice-label" for="workoutChoice">WORKOUT FOR TODAY</label>
+ <select id="workoutChoice" class="session-workout-select" aria-label="Choose today's workout">
+ ${[...ROUTINE_GROUPS,'rest'].map(g=>`<option value="${g}" ${(chosenGroup||'rest')===g?'selected':''}>${escapeHTML(routineNames[g]||'Rest day')}</option>`).join('')}</select>
+ <p class="session-choice-note">Your regular weekly plan stays unchanged. Choose the routine you are training today.</p>
+ ${chosenGroup?`<p>Start ${escapeHTML(routineNames[chosenGroup])} to see its exercises and previous weights.</p><button class="primary session-big-btn" data-action="sessionStart">▶ Start ${escapeHTML(routineNames[chosenGroup])}</button>`:'<p>Rest day selected. Choose a workout above if you want to train.</p>'}
+ </section>`:''}
   ${routinePanel(d)}
   <details class="training-legacy"><summary>Manual logging (outside a session)</summary><section class="training-entry card"><div class="train-section-title"><div><p class="eyebrow">QUICK LOG</p><h2>Add a set</h2></div><span class="pill">KG · REPS</span></div>
   ${choices.length?`<div class="exercise-chips" aria-label="Your recent exercises">${choices.map(name=>`<button type="button" class="exercise-chip ${chosen===name?'picked':''}" data-pick-exercise="${escapeHTML(name)}">${escapeHTML(name)}</button>`).join('')}</div>`:''}
@@ -541,7 +560,7 @@ async function importWorkoutFile(file){
  catch(e){toast('Import failed: '+e.message)}
 }
 function migration(){if(state.legacyImported)return;let old;try{old=JSON.parse(localStorage.getItem(OLD_KEY));}catch(e){toast('Cannot read classic data');return}if(!old||!old.log){toast('No classic workout records');return}let count=0;Object.entries(old.log||{}).forEach(([exercise,dates])=>Object.entries(dates||{}).forEach(([date,sets])=>{if(!Array.isArray(sets))return;const arr=state.workouts[date]||(state.workouts[date]=[]);const warm=inferWarmups(sets);sets.forEach((s,i)=>{if(Array.isArray(s)&&Number.isFinite(Number(s[0]))&&Number.isFinite(Number(s[1]))){const id=`legacy-${exercise}-${date}-${i}`;if(!arr.some(x=>x.id===id)){arr.push({exercise,weight:Number(s[0]),reps:Number(s[1]),source:'classic',warmup:warm[i],id});count++}}})}));Object.entries(old.body||{}).forEach(([d,v])=>{if(Number(v?.w)>0&&!state.weights[d])state.weights[d]=Number(v.w)});Object.entries(old.food||{}).forEach(([d,v])=>{if(!state.meals[d])state.meals[d]=v});state.gymSchedule=old.schedule||{};state.exercisePlan=old.plan||{};state.exerciseConfig=old.ex||{};state.legacyImported=true;ensureWorkoutTemplates();populateHistoryTemplates();persist();render();toast(`Imported ${count} classic sets; original preserved`)}
-async function loadJSON(file,mode){if(!file)return;if(file.size>5*1024*1024){toast('File is too large');return}let j;try{j=JSON.parse(await file.text())}catch(e){toast('Invalid JSON');return}if(mode==='plan'){if(j.kind!=='overload-private-plan'||!Array.isArray(j.stages)||!j.startDate){toast('This is not an Overload plan');return}if(state.config&&!confirm('Replace current private plan? Entries will be retained.'))return;state.config=j;selectedDate=journalDate();await persist();render();toast('Private plan imported — daily tracking begins '+pretty(planStart()))}else{if(j.kind!==BACKUP_SCHEMA||!j.data?.version){toast('Unrecognised backup');return}if(!confirm('Replace current local records with this backup? Export your current data first.'))return;state=j.data;normalizeSettings();state.workouts=state.workouts||{};state.habits=state.habits||{};state.weights=state.weights||{};state.trainingSessions=state.trainingSessions||{};state.stages=state.stages||[];ensureWorkoutTemplates();await persist();render();toast('Private backup restored')}}
+async function loadJSON(file,mode){if(!file)return;if(file.size>5*1024*1024){toast('File is too large');return}let j;try{j=JSON.parse(await file.text())}catch(e){toast('Invalid JSON');return}if(mode==='plan'){if(j.kind!=='overload-private-plan'||!Array.isArray(j.stages)||!j.startDate){toast('This is not an Overload plan');return}if(state.config&&!confirm('Replace current private plan? Entries will be retained.'))return;state.config=j;selectedDate=journalDate();await persist();render();toast('Private plan imported — daily tracking begins '+pretty(planStart()))}else{if(j.kind!==BACKUP_SCHEMA||!j.data?.version){toast('Unrecognised backup');return}if(!confirm('Replace current local records with this backup? Export your current data first.'))return;state=j.data;normalizeSettings();state.workouts=state.workouts||{};state.habits=state.habits||{};state.weights=state.weights||{};state.trainingSessions=state.trainingSessions||{};state.workoutChoices=state.workoutChoices||{};state.stages=state.stages||[];ensureWorkoutTemplates();await persist();render();toast('Private backup restored')}}
 function saveCheckin(){if(isFutureCheckin(selectedDate)){toast(hasPlan()?'Daily logging starts '+pretty(planStart()):'Import your private plan first');return}const sleep=parseSleep($('sleepHours')?.value);if(Number.isNaN(sleep)){toast('Use 7:36 for hours:minutes, or 7,5 for decimal hours');$('sleepHours')?.focus();return;}const weight=$('weight')?.value;const parsed=parseWeight(weight);if(Number.isNaN(parsed)){toast('Use 95.5 or 95,5 for weight in kg');$('weight')?.focus();return}const r=ensureDay();r.sleepHours=sleep;if(parsed!==null){state.weights[selectedDate]=parsed;state.weightMeta=state.weightMeta||{};const meta=state.weightMeta[selectedDate]||{};markEdited(meta);state.weightMeta[selectedDate]=meta;}r.note=($('note')?.value||'').trim().slice(0,2000);if(r.note!==r.lastCommittedNote){if(r.lastCommittedNote&&r.lastCommittedNote!==r.note){r.noteHistory=r.noteHistory||[];r.noteHistory.push({text:r.lastCommittedNote,changedAt:stamp()});r.noteHistory=r.noteHistory.slice(-20)}r.lastCommittedNote=r.note}markEdited(r);r.loggedAt=r.updatedAt;persist().then(()=>{render();toast('✓ Check-in saved on this device')})}
 function addSet(e){e.preventDefault();if(isFutureWorkout(selectedDate)){toast('Choose today or a past date');return}const name=$('exName').value.trim().slice(0,80),w=Number($('exWeight').value),reps=Number($('exReps').value);if(!name||!Number.isFinite(w)||w<0||w>1000||!Number.isInteger(reps)||reps<1||reps>1000){toast('Check the set details');return}if(!state.workouts[selectedDate])state.workouts[selectedDate]=[];selectedExercise=name;state.workouts[selectedDate].push({exercise:name,weight:w,reps,warmup:!!$('isWarmup')?.checked,createdAt:stamp(),id:`set-${Date.now()}-${Math.random().toString(36).slice(2,7)}`});persist();render();toast('Set recorded')}
 function activeWorkoutExists(){return currentSession(today())?.status==='active'}
@@ -576,10 +595,21 @@ document.addEventListener('input',e=>{
  markEdited(rec);
  persist();
 });
+document.addEventListener('change',e=>{
+ if(e.target.id!=='workoutChoice'||selectedDate!==today())return;
+ const group=e.target.value;
+ if(!ROUTINE_GROUPS.includes(group)&&group!=='rest')return;
+ const existing=currentSession(selectedDate);
+ if(existing&&existing.status!=='cancelled')return;
+ state.workoutChoices=state.workoutChoices||{};
+ state.workoutChoices[selectedDate]=group;
+ editingRoutine=false;
+ persist();render();
+});
 document.addEventListener('submit',e=>{if(e.target.id==='workoutForm')addSet(e);if(e.target.id==='templateForm')templateActionAdd(e);if(e.target.id==='sessionSetForm')sessionSaveSet(e);if(e.target.id==='sessionAddForm')sessionAddExercise(e)});
 $('planPicker').addEventListener('change',async e=>{await loadJSON(e.target.files[0],'plan');e.target.value=''});$('backupPicker').addEventListener('change',async e=>{await loadJSON(e.target.files[0],'backup');e.target.value=''});$('workoutTextPicker').addEventListener('change',async e=>{await importWorkoutFile(e.target.files[0]);e.target.value=''});
 window.addEventListener('hashchange',()=>{let x=location.hash.slice(1);if(['today','training','week','settings'].includes(x)){route=x;render()}});
-async function init(){state=await readState();state.workouts=state.workouts||{};state.weights=state.weights||{};state.habits=state.habits||{};state.trainingSessions=state.trainingSessions||{};state.weightMeta=state.weightMeta||{};state.routineVersions=state.routineVersions||[];for(const r of Object.values(state.habits)){if(r&&r.lastCommittedNote===undefined)r.lastCommittedNote=r.note||''}normalizeSettings();const addedTemplates=ensureWorkoutTemplates();if(addedTemplates)await persist();selectedDate=journalDate();lastLogDay=today();const hash=location.hash.slice(1);if(['today','training','week','settings'].includes(hash))route=hash;try{legacyAvailable=!!localStorage.getItem(OLD_KEY)}catch(e){}render();initSwipeDock();if(location.protocol==='https:'&&'serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});if(navigator.onLine)setTimeout(async()=>{try{const r=await fetch('./version.json?auto='+Date.now(),{cache:'no-store'});if(!r.ok)return;const v=await r.json();if(v.version&&v.version!==APP_VERSION)toast('Overload v'+v.version+' available · Update in Settings')}catch(_){/*offline*/}},8000)}
+async function init(){state=await readState();state.workouts=state.workouts||{};state.weights=state.weights||{};state.habits=state.habits||{};state.trainingSessions=state.trainingSessions||{};state.workoutChoices=state.workoutChoices||{};state.weightMeta=state.weightMeta||{};state.routineVersions=state.routineVersions||[];for(const r of Object.values(state.habits)){if(r&&r.lastCommittedNote===undefined)r.lastCommittedNote=r.note||''}normalizeSettings();const addedTemplates=ensureWorkoutTemplates();if(addedTemplates)await persist();selectedDate=journalDate();lastLogDay=today();const hash=location.hash.slice(1);if(['today','training','week','settings'].includes(hash))route=hash;try{legacyAvailable=!!localStorage.getItem(OLD_KEY)}catch(e){}render();initSwipeDock();if(location.protocol==='https:'&&'serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});if(navigator.onLine)setTimeout(async()=>{try{const r=await fetch('./version.json?auto='+Date.now(),{cache:'no-store'});if(!r.ok)return;const v=await r.json();if(v.version&&v.version!==APP_VERSION)toast('Overload v'+v.version+' available · Update in Settings')}catch(_){/*offline*/}},8000)}
 init();
 setInterval(()=>{if(state?.settings?.theme==='auto')applyTheme();if(state&&today()!==lastLogDay){lastLogDay=today();if(autoDay){selectedDate=journalDate();render()}}},30000);
 })();

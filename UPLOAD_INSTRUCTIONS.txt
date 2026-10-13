@@ -1,0 +1,31 @@
+OVERLOAD v2.5 — PICK TODAY'S WORKOUT
+Release prepared 13 Oct 2026
+
+NEW
+- Training → choose Legs, Push, Pull, Easy run, or Rest day before starting.
+- Defaults to the usual weekday routine but lets you choose any routine today.
+- Selecting a workout affects today's choice only; the weekly training plan is unchanged.
+- Saves the chosen routine and snapshots it into active/finished sessions.
+- Prior sets, routines, history, local private plan, and backups are preserved.
+- A cancelled workout can be replaced with a different workout on the same day.
+- Weekly AI training review identifies days when a different workout was selected.
+
+UPLOAD — GitHub website (direct write permission unavailable to ChatGPT)
+1. In Overload on iPhone: Settings → Export private backup (.json). Confirm the JSON was saved safely in Files; do not upload it to GitHub.
+2. Open https://github.com/khatib393/overload and upload/replace these five files in the repository ROOT:
+      app.js
+      index.html
+      styles.css
+      sw.js
+      version.json
+   Use GitHub's Upload files page, replace the existing files, then commit to your deployment branch (normally main).
+3. Wait for GitHub Pages to publish. In the installed Overload app, open Settings → Check for updates; if needed, use Repair app files. Do NOT uninstall the Home Screen app, delete website data, or clear IndexedDB.
+4. Confirm Settings says v2.5.0. Open Training on Tuesday and select Pull, then Start Pull. You should see your Pull exercises and previous weights.
+5. If GitHub complains about filename conflicts during upload, edit/replace the existing five public files rather than deleting the repository or app data.
+
+THIS ZIP HAS ONLY PUBLIC APP FILES. It does not contain private workouts, plans, financial data, or credentials.
+
+TESTS
+- Node syntax check passed.
+- Focused functional tests pass for workout override, future plan preserved, rest, historical snapshot, and cancelled-session changes.
+- The installed iPhone PWA update has not been tested on your device; please verify version and UI after publishing.

@@ -1,6 +1,6 @@
 /* Only app shell is cached. Never touch IndexedDB, LocalStorage, or private records. */
-const SHELL='overload-shell-v8-2-4';
-const ASSETS=['./','./index.html','./styles.css?v=2-4','./app.js?v=2-4','./version.json','./manifest.webmanifest','./icon.svg'];
+const SHELL='overload-shell-v9-2-5';
+const ASSETS=['./','./index.html','./styles.css?v=2-5','./app.js?v=2-5','./version.json','./manifest.webmanifest','./icon.svg'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(SHELL).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>(k.startsWith('overload-shell-')||k==='overload-v2')&&k!==SHELL).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('message',event=>{if(event.data==='SKIP_WAITING')self.skipWaiting()});
